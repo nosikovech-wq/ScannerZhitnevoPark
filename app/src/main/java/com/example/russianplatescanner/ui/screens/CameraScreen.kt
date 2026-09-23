@@ -232,6 +232,7 @@ fun CameraScreen(
                 }
             }
 
+            // flashlight-v3
             IconButton(
                 onClick = { torchOn = !torchOn },
                 modifier = Modifier
