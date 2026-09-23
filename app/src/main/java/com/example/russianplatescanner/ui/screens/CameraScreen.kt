@@ -29,11 +29,15 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.russianplatescanner.PlateApp
 import com.example.russianplatescanner.ui.theme.*
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.Executors
 
 @Composable
@@ -76,6 +80,8 @@ fun CameraScreen(
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     val uiState by viewModel.uiState.collectAsState()
     val liveNumber by viewModel.liveNumber.collectAsState()
+    val todayHit by viewModel.todayHit.collectAsState()
+    var blocked by remember { mutableStateOf<SaveResult.Duplicate?>(null) }
 
     fun takeShot() {
         val photoFile = java.io.File(
@@ -184,19 +190,74 @@ fun CameraScreen(
                 liveNumber?.let { number ->
                     Text(
                         number,
-                        color = Ok,
+                        color = if (todayHit != null) Danger else Ok,
                         fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp,
                         modifier = Modifier
                             .clip(RoundedCornerShape(50))
-                            .background(Ok.copy(alpha = 0.2f))
-                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                            .background(
+                                if (todayHit != null) Danger.copy(alpha = 0.22f) else Ok.copy(alpha = 0.2f)
+                            )
+                            .padding(horizontal = 14.dp, vertical = 8.dp)
                     )
                 }
             }
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
+
+        liveNumber?.let { number ->
+            val hit = todayHit
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(if (hit != null) Danger.copy(alpha = 0.16f) else Surface)
+                    .border(
+                        1.dp,
+                        if (hit != null) Danger else Border,
+                        RoundedCornerShape(20.dp)
+                    )
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    if (hit != null) "УЖЕ В БАЗЕ СЕГОДНЯ" else "НОМЕР В КАДРЕ",
+                    color = if (hit != null) Danger else Subtle,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 1.4.sp
+                )
+                Text(
+                    number,
+                    color = if (hit != null) Danger else Fg,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 34.sp,
+                    letterSpacing = 1.sp
+                )
+                if (hit != null) {
+                    Text(
+                        buildString {
+                            append("Записан ")
+                            append(formatWhen(hit.previousAt))
+                            hit.note?.let { append(" · ").append(it) }
+                            append(". Повторно сохранить нельзя.")
+                        },
+                        color = Danger,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                } else {
+                    Text(
+                        "Сегодня этого номера в базе ещё нет.",
+                        color = Muted,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
 
         val shooting = uiState is CameraUiState.Recognizing
         FloatingActionButton(
@@ -230,18 +291,11 @@ fun CameraScreen(
                     viewModel.save(finalNumber, note, state.bitmap) { result ->
                         when (result) {
                             is SaveResult.Saved -> {
+                                blocked = null
                                 Toast.makeText(context, "Сохранено: $finalNumber", Toast.LENGTH_SHORT).show()
                                 onSaved()
                             }
-                            is SaveResult.Duplicate -> {
-                                val whenText = android.text.format.DateFormat
-                                    .format("HH:mm", result.previousAt)
-                                Toast.makeText(
-                                    context,
-                                    "Номер уже в базе за сегодня ($whenText). Повтор запрещён.",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
+                            is SaveResult.Duplicate -> blocked = result
                             is SaveResult.Failed -> {
                                 Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
                             }
@@ -255,9 +309,65 @@ fun CameraScreen(
         else -> {}
     }
 
+    blocked?.let { dup ->
+        DuplicateNotice(
+            hit = dup.hit,
+            onDismiss = { blocked = null }
+        )
+    }
+
     DisposableEffect(Unit) {
         onDispose { cameraExecutor.shutdown() }
     }
+}
+
+@Composable
+private fun DuplicateNotice(
+    hit: TodayHit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Surface,
+        title = { Text("Номер уже в базе", color = Danger) },
+        text = {
+            Column {
+                Text(
+                    hit.number,
+                    color = Danger,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 28.sp
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Записан сегодня, ${formatWhen(hit.previousAt)}.",
+                    color = Fg
+                )
+                hit.note?.let { note ->
+                    Spacer(Modifier.height(8.dp))
+                    Text("Заметка: $note", color = Muted)
+                }
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Повторная запись этого номера запрещена до полуночи. Завтра его можно сохранить снова.",
+                    color = Muted
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = Danger, contentColor = Fg)
+            ) {
+                Text("Понятно")
+            }
+        }
+    )
+}
+
+private fun formatWhen(timestamp: Long): String {
+    return SimpleDateFormat("d MMMM, HH:mm", Locale("ru")).format(Date(timestamp))
 }
 
 @Composable

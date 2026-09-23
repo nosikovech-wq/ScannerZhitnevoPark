@@ -28,9 +28,15 @@ sealed class CameraUiState {
     ) : CameraUiState()
 }
 
+data class TodayHit(
+    val number: String,
+    val previousAt: Long,
+    val note: String?
+)
+
 sealed class SaveResult {
     data object Saved : SaveResult()
-    data class Duplicate(val previousAt: Long) : SaveResult()
+    data class Duplicate(val hit: TodayHit) : SaveResult()
     data class Failed(val message: String) : SaveResult()
 }
 
@@ -43,12 +49,41 @@ class CameraViewModel(
     private var analyzing = false
     private var lastAnalyzeAt = 0L
     private var saving = false
+    private var cachedPlates: List<PlateEntity> = emptyList()
 
     private val _uiState = MutableStateFlow<CameraUiState>(CameraUiState.Idle)
     val uiState: StateFlow<CameraUiState> = _uiState.asStateFlow()
 
     private val _liveNumber = MutableStateFlow<String?>(null)
     val liveNumber: StateFlow<String?> = _liveNumber.asStateFlow()
+
+    private val _todayHit = MutableStateFlow<TodayHit?>(null)
+    val todayHit: StateFlow<TodayHit?> = _todayHit.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            plateDao.getAll().collect { list ->
+                cachedPlates = list
+                _todayHit.value = hitFor(_liveNumber.value)
+            }
+        }
+    }
+
+    private fun hitFor(number: String?): TodayHit? {
+        if (number.isNullOrBlank()) return null
+        val normalized = normalizePlate(number)
+        if (normalized.isBlank()) return null
+        val since = startOfLocalDay()
+        val hit = cachedPlates.firstOrNull {
+            it.timestamp >= since && normalizePlate(it.number) == normalized
+        } ?: return null
+        return TodayHit(number = hit.number, previousAt = hit.timestamp, note = hit.note)
+    }
+
+    private fun publishLive(number: String?) {
+        _liveNumber.value = number
+        _todayHit.value = hitFor(number)
+    }
 
     fun onFrame(imageProxy: ImageProxy) {
         val now = System.currentTimeMillis()
@@ -72,7 +107,7 @@ class CameraViewModel(
             try {
                 val result = recognizer.recognize(image)
                 if (result.number != null) {
-                    _liveNumber.value = result.number
+                    publishLive(result.number)
                 }
             } catch (_: Exception) {
             } finally {
@@ -115,8 +150,9 @@ class CameraViewModel(
                 val since = startOfLocalDay()
                 val existing = plateDao.recordedSince(since)
                     .firstOrNull { normalizePlate(it.number) == normalized }
+                    ?.let { TodayHit(number = it.number, previousAt = it.timestamp, note = it.note) }
                 if (existing != null) {
-                    onResult(SaveResult.Duplicate(existing.timestamp))
+                    onResult(SaveResult.Duplicate(existing))
                     return@launch
                 }
                 val path = PhotoStorage.savePhoto(appContext, bitmap)
