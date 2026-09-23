@@ -240,7 +240,7 @@ fun CameraScreen(
                     .background(if (torchOn) Accent else Bg.copy(alpha = 0.72f))
             ) {
                 Icon(
-                    if (torchOn) FlashlightOn else FlashlightOff,
+                    imageVector = if (torchOn) Icons.Filled.FlashlightOn else Icons.Filled.FlashlightOff,
                     contentDescription = if (torchOn) "Выключить фонарик" else "Включить фонарик",
                     tint = if (torchOn) AccentFg else Fg
                 )
