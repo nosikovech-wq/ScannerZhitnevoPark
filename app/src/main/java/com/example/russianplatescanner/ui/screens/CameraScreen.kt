@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
@@ -19,6 +20,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Camera
+import androidx.compose.material.icons.filled.FlashlightOff
+import androidx.compose.material.icons.filled.FlashlightOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -78,10 +81,24 @@ fun CameraScreen(
 
     val imageCapture = remember { ImageCapture.Builder().build() }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+    val cameraHolder = remember { mutableStateOf<Camera?>(null) }
+    var torchOn by remember { mutableStateOf(false) }
     val uiState by viewModel.uiState.collectAsState()
     val liveNumber by viewModel.liveNumber.collectAsState()
     val todayHit by viewModel.todayHit.collectAsState()
     var blocked by remember { mutableStateOf<SaveResult.Duplicate?>(null) }
+
+    LaunchedEffect(torchOn, cameraHolder.value) {
+        val bound = cameraHolder.value ?: return@LaunchedEffect
+        if (!bound.cameraInfo.hasFlashUnit()) {
+            if (torchOn) {
+                torchOn = false
+                Toast.makeText(context, "На этом устройстве нет фонарика", Toast.LENGTH_SHORT).show()
+            }
+            return@LaunchedEffect
+        }
+        bound.cameraControl.enableTorch(torchOn)
+    }
 
     fun takeShot() {
         val photoFile = java.io.File(
@@ -151,13 +168,14 @@ fun CameraScreen(
                                 }
                                 try {
                                     cameraProvider.unbindAll()
-                                    cameraProvider.bindToLifecycle(
+                                    val bound = cameraProvider.bindToLifecycle(
                                         lifecycleOwner,
                                         CameraSelector.DEFAULT_BACK_CAMERA,
                                         preview,
                                         imageCapture,
                                         analysis
                                     )
+                                    cameraHolder.value = bound
                                 } catch (e: Exception) {
                                     e.printStackTrace()
                                 }
@@ -210,6 +228,22 @@ fun CameraScreen(
                             .padding(horizontal = 14.dp, vertical = 8.dp)
                     )
                 }
+            }
+
+            IconButton(
+                onClick = { torchOn = !torchOn },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(12.dp)
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(if (torchOn) Accent else Bg.copy(alpha = 0.72f))
+            ) {
+                Icon(
+                    if (torchOn) FlashlightOn else FlashlightOff,
+                    contentDescription = if (torchOn) "Выключить фонарик" else "Включить фонарик",
+                    tint = if (torchOn) AccentFg else Fg
+                )
             }
         }
 
@@ -325,7 +359,10 @@ fun CameraScreen(
     }
 
     DisposableEffect(Unit) {
-        onDispose { cameraExecutor.shutdown() }
+        onDispose {
+            cameraHolder.value?.cameraControl?.enableTorch(false)
+            cameraExecutor.shutdown()
+        }
     }
 }
 
