@@ -20,13 +20,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Camera
-import androidx.compose.material.icons.filled.FlashlightOff
-import androidx.compose.material.icons.filled.FlashlightOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontFamily
@@ -240,7 +242,7 @@ fun CameraScreen(
                     .background(if (torchOn) Accent else Bg.copy(alpha = 0.72f))
             ) {
                 Icon(
-                    imageVector = if (torchOn) Icons.Filled.FlashlightOn else Icons.Filled.FlashlightOff,
+                    imageVector = flashlightIcon(torchOn),
                     contentDescription = if (torchOn) "Выключить фонарик" else "Включить фонарик",
                     tint = if (torchOn) AccentFg else Fg
                 )
@@ -474,4 +476,37 @@ private fun ResultDialog(
             TextButton(onClick = onRetry) { Text("Ещё раз", color = Muted) }
         }
     )
+}
+
+private val FlashlightOnIcon = flashlightVector(on = true)
+private val FlashlightOffIcon = flashlightVector(on = false)
+
+private fun flashlightIcon(on: Boolean): ImageVector = if (on) FlashlightOnIcon else FlashlightOffIcon
+
+private fun flashlightVector(on: Boolean): ImageVector {
+    val builder = ImageVector.Builder(
+        name = if (on) "FlashlightOn" else "FlashlightOff",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    )
+    builder.addPath(
+        pathData = PathParser().parsePathString("M8,2h8v2h-8z").toNodes(),
+        fill = SolidColor(Color.Black)
+    )
+    builder.addPath(
+        pathData = PathParser().parsePathString(
+            "M6,6h12l-1.2,3.2V20c0,0.55 -0.45,1 -1,1h-7.6c-0.55,0 -1,-0.45 -1,-1V9.2L6,6z"
+        ).toNodes(),
+        fill = SolidColor(Color.Black)
+    )
+    if (!on) {
+        builder.addPath(
+            pathData = PathParser().parsePathString("M4,4 L20,20").toNodes(),
+            stroke = SolidColor(Color.Black),
+            strokeLineWidth = 2.2f
+        )
+    }
+    return builder.build()
 }
