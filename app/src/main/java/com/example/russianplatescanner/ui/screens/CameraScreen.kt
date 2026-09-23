@@ -423,9 +423,14 @@ private fun ResultDialog(
                     }
                 },
                 enabled = editableNumber.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = AccentFg)
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Fg,
+                    contentColor = AccentFg,
+                    disabledContainerColor = Surface2,
+                    disabledContentColor = Muted
+                )
             ) {
-                Text("В базу")
+                Text("В базу", color = AccentFg, fontWeight = FontWeight.SemiBold)
             }
         },
         dismissButton = {
