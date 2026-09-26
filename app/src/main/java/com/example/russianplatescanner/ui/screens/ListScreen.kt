@@ -8,9 +8,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -25,12 +29,15 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.russianplatescanner.PlateApp
 import com.example.russianplatescanner.data.PlateEntity
 import com.example.russianplatescanner.ui.theme.*
 import com.example.russianplatescanner.util.CsvExporter
+import com.example.russianplatescanner.util.SheetSync
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -48,6 +55,27 @@ fun ListScreen(
 
     val plates by viewModel.plates.collectAsState(initial = emptyList())
     var searchQuery by remember { mutableStateOf("") }
+    var urlDialog by remember { mutableStateOf(false) }
+    var urlDraft by remember { mutableStateOf("") }
+    var upload by remember { mutableStateOf<SheetSync.Tick?>(null) }
+    var cancelUpload by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    fun startUpload() {
+        val url = SheetSync.url(context)
+        if (!url.startsWith("https://")) {
+            urlDraft = url
+            urlDialog = true
+            return
+        }
+        cancelUpload = false
+        upload = SheetSync.Tick("Проверка строк в таблице…", 0, 0, 0, 0)
+        scope.launch {
+            SheetSync.upload(url, plates, { cancelUpload }) { tick ->
+                upload = tick
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -94,6 +122,20 @@ fun ListScreen(
                 Spacer(Modifier.width(6.dp))
                 Text("Excel", color = Fg)
             }
+            Spacer(Modifier.width(8.dp))
+            TextButton(
+                onClick = { startUpload() },
+                enabled = plates.isNotEmpty() && upload?.finished != false,
+                modifier = Modifier
+                    .height(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Surface)
+                    .border(1.dp, Border, RoundedCornerShape(12.dp))
+            ) {
+                Icon(Icons.Outlined.CloudUpload, contentDescription = "Онлайн", tint = Fg, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Онлайн", color = Fg)
+            }
         }
 
         Spacer(Modifier.height(16.dp))
@@ -123,6 +165,32 @@ fun ListScreen(
                 }
             }
         }
+    }
+
+    if (urlDialog) {
+        UrlDialog(
+            value = urlDraft,
+            onValue = { urlDraft = it },
+            onDismiss = { urlDialog = false },
+            onSave = {
+                SheetSync.saveUrl(context, urlDraft)
+                urlDialog = false
+                startUpload()
+            }
+        )
+    }
+
+    upload?.let { tick ->
+        UploadDialog(
+            tick = tick,
+            onCancel = { cancelUpload = true },
+            onClose = { upload = null },
+            onChangeUrl = {
+                upload = null
+                urlDraft = SheetSync.url(context)
+                urlDialog = true
+            }
+        )
     }
 }
 
@@ -180,4 +248,143 @@ fun PlateItem(plate: PlateEntity, onClick: () -> Unit) {
 private fun formatPlateUi(number: String): String {
     val m = Regex("^([АВЕКМНОРСТУХ])(\\d{3})([АВЕКМНОРСТУХ]{2})(\\d{2,3})$").find(number)
     return if (m != null) "${m.groupValues[1]} ${m.groupValues[2]} ${m.groupValues[3]} ${m.groupValues[4]}" else number
+}
+
+@Composable
+private fun UrlDialog(
+    value: String,
+    onValue: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onSave: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(28.dp))
+                .background(Surface)
+                .padding(20.dp)
+        ) {
+            Text("Адрес онлайн-таблицы", color = Fg, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Вставьте ссылку веб-приложения Google, которая заканчивается на /exec",
+                color = Muted,
+                fontSize = 14.sp
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = value,
+                onValueChange = onValue,
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("https://script.google.com/...") },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Fg,
+                    unfocusedTextColor = Fg,
+                    focusedBorderColor = Accent,
+                    unfocusedBorderColor = Border,
+                    cursorColor = Fg
+                )
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Fg, contentColor = AccentFg)
+                ) { Text("Отмена", color = AccentFg, maxLines = 1) }
+                Button(
+                    onClick = onSave,
+                    enabled = value.trim().startsWith("https://"),
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Ok,
+                        contentColor = AccentFg,
+                        disabledContainerColor = Surface2,
+                        disabledContentColor = Muted
+                    )
+                ) { Text("Далее", fontWeight = FontWeight.Bold, maxLines = 1) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UploadDialog(
+    tick: SheetSync.Tick,
+    onCancel: () -> Unit,
+    onClose: () -> Unit,
+    onChangeUrl: () -> Unit
+) {
+    val fraction = if (tick.total <= 0) 0f else tick.done.toFloat() / tick.total.toFloat()
+    Dialog(onDismissRequest = { if (tick.finished) onClose() else onCancel() }) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(28.dp))
+                .background(Surface)
+                .padding(20.dp)
+        ) {
+            Text("Выгрузка в таблицу", color = Fg, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+            Spacer(Modifier.height(12.dp))
+            Text(tick.phase, color = Fg, fontSize = 16.sp)
+            Spacer(Modifier.height(12.dp))
+            if (!tick.finished && tick.total == 0) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                    color = Ok,
+                    trackColor = Surface2
+                )
+            } else {
+                LinearProgressIndicator(
+                    progress = if (tick.finished && tick.total == 0 && tick.error == null) 1f else fraction,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                    color = if (tick.error == null) Ok else Danger,
+                    trackColor = Surface2
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                if (tick.total > 0) "${tick.done} из ${tick.total}" else "Сверка с таблицей",
+                color = Muted,
+                fontSize = 13.sp
+            )
+            if (tick.finished) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    tick.error ?: "Добавлено: ${tick.inserted}. Уже были в таблице: ${tick.skipped}.",
+                    color = if (tick.error == null) Fg else Danger,
+                    fontSize = 14.sp
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+            if (tick.finished) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = onChangeUrl,
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Fg, contentColor = AccentFg)
+                    ) { Text("Адрес", color = AccentFg, maxLines = 1) }
+                    Button(
+                        onClick = onClose,
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Ok, contentColor = AccentFg)
+                    ) { Text("Закрыть", color = AccentFg, fontWeight = FontWeight.Bold, maxLines = 1) }
+                }
+            } else {
+                Button(
+                    onClick = onCancel,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Fg, contentColor = AccentFg)
+                ) { Text("Отмена", color = AccentFg) }
+            }
+        }
+    }
 }
