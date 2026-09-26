@@ -31,11 +31,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.russianplatescanner.data.AppDatabase
@@ -331,7 +333,6 @@ fun CameraScreen(
         is CameraUiState.Result -> {
             ResultDialog(
                 number = state.number,
-                rawText = state.rawText,
                 onConfirm = { finalNumber, note ->
                     viewModel.save(finalNumber, note, state.bitmap) { result ->
                         when (result) {
@@ -421,37 +422,62 @@ private fun formatWhen(timestamp: Long): String {
 @Composable
 private fun ResultDialog(
     number: String?,
-    rawText: String,
     onConfirm: (String, String?) -> Unit,
     onRetry: () -> Unit,
     onDismiss: () -> Unit
 ) {
     var editableNumber by remember { mutableStateOf(number ?: "") }
     var note by remember { mutableStateOf("") }
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = Fg,
+        unfocusedTextColor = Fg,
+        cursorColor = Fg,
+        focusedBorderColor = Accent,
+        unfocusedBorderColor = Border,
+        focusedLabelColor = Muted,
+        unfocusedLabelColor = Muted,
+        focusedContainerColor = Surface2,
+        unfocusedContainerColor = Surface2
+    )
+    val numberStyle = TextStyle(
+        color = Fg,
+        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.Bold,
+        fontSize = 28.sp,
+        letterSpacing = 1.sp
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp),
+        properties = DialogProperties(usePlatformDefaultWidth = false),
         containerColor = Surface,
         title = { Text("Сохранить запись", color = Fg) },
         text = {
-            Column {
-                if (rawText.isNotBlank()) {
-                    Text("Сырой текст: $rawText", color = Subtle)
-                    Spacer(Modifier.height(12.dp))
-                }
+            Column(modifier = Modifier.fillMaxWidth()) {
                 OutlinedTextField(
                     value = editableNumber,
                     onValueChange = { editableNumber = it.uppercase() },
                     label = { Text("Номер") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    textStyle = numberStyle,
+                    colors = fieldColors,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(88.dp)
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = note,
                     onValueChange = { note = it },
                     label = { Text("Заметка (необязательно)") },
-                    modifier = Modifier.fillMaxWidth()
+                    textStyle = TextStyle(color = Fg, fontSize = 18.sp),
+                    colors = fieldColors,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
                 )
             }
         },
