@@ -542,9 +542,7 @@ private fun ResultDialog(
                         .height(48.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Danger, contentColor = Fg)
                 ) {
-                    @Suppress("SpellCheckingInspection")
-                    val unauthorizedLabel = "НЕСОГЛ."
-                    Text(unauthorizedLabel, color = Fg, fontWeight = FontWeight.Bold)
+                    Text("НЕСОГЛАСОВАННЫЙ ВЫЕЗД", color = Fg, fontWeight = FontWeight.Bold, maxLines = 1)
                 }
             }
             Spacer(Modifier.height(12.dp))
