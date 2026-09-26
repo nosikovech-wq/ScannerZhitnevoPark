@@ -37,6 +37,7 @@ import com.example.russianplatescanner.data.PlateEntity
 import com.example.russianplatescanner.ui.theme.*
 import com.example.russianplatescanner.util.CsvExporter
 import com.example.russianplatescanner.util.SheetSync
+import com.example.russianplatescanner.util.formatPlateUi
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -230,11 +231,6 @@ fun PlateItem(plate: PlateEntity, onClick: () -> Unit) {
             }
         }
     }
-}
-
-private fun formatPlateUi(number: String): String {
-    val m = Regex("^([АВЕКМНОРСТУХ])(\\d{3})([АВЕКМНОРСТУХ]{2})(\\d{2,3})$").find(number)
-    return if (m != null) "${m.groupValues[1]} ${m.groupValues[2]} ${m.groupValues[3]} ${m.groupValues[4]}" else number
 }
 
 @Composable

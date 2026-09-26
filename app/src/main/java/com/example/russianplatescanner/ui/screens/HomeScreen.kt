@@ -29,6 +29,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.russianplatescanner.PlateApp
 import com.example.russianplatescanner.ui.theme.Accent
 import com.example.russianplatescanner.ui.theme.AccentFg
@@ -280,10 +281,14 @@ private fun ClearDatabaseDialog(
 ) {
     var password by remember { mutableStateOf("") }
     val passwordOk = password == "Valter2018dvo"
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(horizontal = 16.dp)
                 .clip(RoundedCornerShape(28.dp))
                 .background(Surface)
                 .padding(20.dp)
@@ -325,14 +330,23 @@ private fun ClearDatabaseDialog(
                     onClick = onDismiss,
                     enabled = !busy,
                     modifier = Modifier.weight(1f).height(48.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Fg, contentColor = AccentFg)
                 ) {
-                    Text("Отмена", color = AccentFg, maxLines = 1)
+                    Text(
+                        "Отмена",
+                        color = AccentFg,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        softWrap = false
+                    )
                 }
                 Button(
                     onClick = onConfirm,
                     enabled = passwordOk && !busy,
                     modifier = Modifier.weight(1f).height(48.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Danger,
                         contentColor = Fg,
@@ -341,10 +355,12 @@ private fun ClearDatabaseDialog(
                     )
                 ) {
                     Text(
-                        if (busy) "..." else "ОЧИСТИТЬ",
+                        if (busy) "..." else "Очистить",
                         color = if (passwordOk && !busy) Fg else Muted,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
             }
