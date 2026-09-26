@@ -15,6 +15,8 @@ import java.util.Locale
 object SheetSync {
     private const val PREFS = "sheet_sync"
     private const val KEY_URL = "url"
+    const val DEFAULT_URL =
+        "https://script.google.com/macros/s/AKfycbzN4wj3G-vXs_75xdFcNFcndEOR8nc-2khBpz7I_4J4cZTbUL1aK7U3uyW7qpwvQ5d5EA/exec"
 
     data class Tick(
         val phase: String,
@@ -30,6 +32,7 @@ object SheetSync {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(KEY_URL, "")
             .orEmpty()
+            .ifBlank { DEFAULT_URL }
     }
 
     fun saveUrl(context: Context, value: String) {
