@@ -97,18 +97,16 @@ fun DetailScreen(
                 color = Subtle,
                 modifier = Modifier.align(Alignment.CenterHorizontally)
             )
-            p.note?.let { note ->
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    note,
-                    color = Fg,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Surface)
-                        .padding(16.dp)
-                )
-            }
+            Spacer(Modifier.height(16.dp))
+            Text(
+                p.note?.takeIf { it.isNotBlank() } ?: "Заметка отсутствует",
+                color = if (p.note.isNullOrBlank()) Muted else Fg,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Surface)
+                    .padding(16.dp)
+            )
         } ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(color = Accent)
         }
