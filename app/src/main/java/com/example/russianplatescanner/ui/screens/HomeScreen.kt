@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.russianplatescanner.ui.theme.Bg
 import com.example.russianplatescanner.ui.theme.Fg
@@ -35,10 +36,17 @@ fun HomeScreen(
             .padding(horizontal = 16.dp)
     ) {
         Spacer(Modifier.height(12.dp))
-        Text("ЖитневоПарк Сканер", style = androidx.compose.material3.MaterialTheme.typography.headlineMedium)
+        Text(
+            "Житнево Парк Сканер",
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+            style = androidx.compose.material3.MaterialTheme.typography.headlineMedium
+        )
         Spacer(Modifier.height(4.dp))
         Text(
             "Автор ПО, 8-999-846-90-96",
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
             style = androidx.compose.material3.MaterialTheme.typography.bodyMedium
         )
         Spacer(Modifier.height(16.dp))
