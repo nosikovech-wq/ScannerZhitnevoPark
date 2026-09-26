@@ -13,11 +13,25 @@ object PhotoStorage {
 
         val filename = "plate_${System.currentTimeMillis()}.jpg"
         val file = File(dir, filename)
+        val scaled = scaleDown(bitmap, 1280)
 
-        FileOutputStream(file).use { out ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
+        try {
+            FileOutputStream(file).use { out ->
+                scaled.compress(Bitmap.CompressFormat.JPEG, 70, out)
+            }
+        } finally {
+            if (scaled !== bitmap) scaled.recycle()
         }
         return file.absolutePath
+    }
+
+    private fun scaleDown(bitmap: Bitmap, maxEdge: Int): Bitmap {
+        val longest = maxOf(bitmap.width, bitmap.height)
+        if (longest <= maxEdge) return bitmap
+        val scale = maxEdge.toFloat() / longest
+        val width = (bitmap.width * scale).toInt().coerceAtLeast(1)
+        val height = (bitmap.height * scale).toInt().coerceAtLeast(1)
+        return Bitmap.createScaledBitmap(bitmap, width, height, true)
     }
 
     fun deletePhoto(path: String) {

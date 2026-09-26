@@ -2,6 +2,7 @@ package com.example.russianplatescanner.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.util.Size
 import android.widget.Toast
 import androidx.annotation.WorkerThread
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -12,6 +13,8 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
@@ -86,7 +89,20 @@ fun CameraScreen(
         }
     }
 
-    val imageCapture = remember { ImageCapture.Builder().build() }
+    val imageCapture = remember {
+        val resolution = ResolutionSelector.Builder()
+            .setResolutionStrategy(
+                ResolutionStrategy(
+                    Size(1280, 960),
+                    ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
+                )
+            )
+            .build()
+        ImageCapture.Builder()
+            .setResolutionSelector(resolution)
+            .setJpegQuality(70)
+            .build()
+    }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     val cameraHolder = remember { mutableStateOf<Camera?>(null) }
     val previewHolder = remember { mutableStateOf<PreviewView?>(null) }
