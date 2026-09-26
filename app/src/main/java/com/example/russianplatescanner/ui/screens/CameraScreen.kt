@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -467,78 +468,94 @@ private fun ResultDialog(
         letterSpacing = 1.sp
     )
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp),
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-        containerColor = Surface,
-        title = { Text("Сохранить запись", color = Fg) },
-        text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(
-                    value = editableNumber,
-                    onValueChange = { editableNumber = it.uppercase() },
-                    label = { Text("Номер") },
-                    singleLine = true,
-                    textStyle = numberStyle,
-                    colors = fieldColors,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(88.dp)
-                )
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .clip(RoundedCornerShape(28.dp))
+                .background(com.example.russianplatescanner.ui.theme.Surface)
+                .padding(20.dp)
+        ) {
+            Text("Сохранить запись", color = Fg, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+            Spacer(Modifier.height(16.dp))
+            OutlinedTextField(
+                value = editableNumber,
+                onValueChange = { editableNumber = it.uppercase() },
+                label = { Text("Номер") },
+                singleLine = true,
+                textStyle = numberStyle,
+                colors = fieldColors,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(88.dp)
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = note,
+                onValueChange = { note = it },
+                label = { Text("Заметка (необязательно)") },
+                textStyle = TextStyle(color = Fg, fontSize = 18.sp),
+                colors = fieldColors,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(64.dp)
+            )
+            if (duplicate != null) {
                 Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = note,
-                    onValueChange = { note = it },
-                    label = { Text("Заметка (необязательно)") },
-                    textStyle = TextStyle(color = Fg, fontSize = 18.sp),
-                    colors = fieldColors,
+                Button(
+                    onClick = {
+                        if (editableNumber.isNotBlank()) {
+                            onUnauthorized(editableNumber.trim(), note.ifBlank { null })
+                        }
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(64.dp)
-                )
-                if (duplicate != null) {
-                    Spacer(Modifier.height(12.dp))
-                    Button(
-                        onClick = {
-                            if (editableNumber.isNotBlank()) {
-                                onUnauthorized(editableNumber.trim(), note.ifBlank { null })
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Ok, contentColor = AccentFg)
-                    ) {
-                        Text("НЕСОГЛ.", color = AccentFg, fontWeight = FontWeight.Bold)
-                    }
+                        .height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Danger, contentColor = Fg)
+                ) {
+                    Text("НЕСОГЛ.", color = Fg, fontWeight = FontWeight.Bold)
                 }
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (editableNumber.isNotBlank()) {
-                        onConfirm(editableNumber.trim(), note.ifBlank { null })
-                    }
-                },
-                enabled = editableNumber.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Fg,
-                    contentColor = AccentFg,
-                    disabledContainerColor = Surface2,
-                    disabledContentColor = Muted
-                )
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("В базу", color = AccentFg, fontWeight = FontWeight.SemiBold)
+                Button(
+                    onClick = onRetry,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Fg, contentColor = AccentFg)
+                ) {
+                    Text("Ещё раз", color = AccentFg, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                }
+                Button(
+                    onClick = {
+                        if (editableNumber.isNotBlank()) {
+                            onConfirm(editableNumber.trim(), note.ifBlank { null })
+                        }
+                    },
+                    enabled = editableNumber.isNotBlank(),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Ok,
+                        contentColor = AccentFg,
+                        disabledContainerColor = Surface2,
+                        disabledContentColor = Muted
+                    )
+                ) {
+                    Text("В БАЗУ", fontWeight = FontWeight.Bold, maxLines = 1)
+                }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onRetry) { Text("Ещё раз", color = Muted) }
         }
-    )
+    }
 }
 
 // camera-provider-io-v3: ожидание камеры не на главном потоке
