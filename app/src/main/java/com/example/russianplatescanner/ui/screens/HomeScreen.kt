@@ -1,5 +1,7 @@
 package com.example.russianplatescanner.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -22,6 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.russianplatescanner.ui.theme.Accent
@@ -174,7 +177,21 @@ private fun SettingsScreen() {
             color = Subtle,
             fontSize = 13.sp
         )
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.weight(1f))
+        Text(
+            "Автор ПО - Telegramm",
+            color = Accent,
+            fontSize = 15.sp,
+            textAlign = TextAlign.Center,
+            textDecoration = TextDecoration.Underline,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/helloexec")))
+                }
+                .padding(vertical = 12.dp)
+        )
+        Spacer(Modifier.height(8.dp))
         Button(
             onClick = {
                 SheetSync.saveUrl(context, url)
