@@ -217,6 +217,11 @@ fun CameraScreen(
                     factory = { ctx ->
                         PreviewView(ctx).also { previewHolder.value = it }
                     },
+                    update = { view ->
+                        if (view.width > 0 && view.height > 0) {
+                            viewModel.updatePreviewSize(view.width, view.height)
+                        }
+                    },
                     modifier = Modifier.fillMaxSize()
                 )
             } else {

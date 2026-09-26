@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.russianplatescanner.data.PlateDao
 import com.example.russianplatescanner.data.PlateEntity
+import com.example.russianplatescanner.util.GuideCrop
 import com.example.russianplatescanner.util.PhotoStorage
 import com.example.russianplatescanner.util.PlateRecognizer
 import com.example.russianplatescanner.util.startOfLocalDay
@@ -15,7 +16,7 @@ import com.example.russianplatescanner.util.startOfLocalMonth
 import com.example.russianplatescanner.util.REPEAT_LOCK_MS
 import com.example.russianplatescanner.util.normalizePlate
 import com.example.russianplatescanner.util.repeatWindowStart
-import com.google.mlkit.vision.common.InputImage
+import com.example.russianplatescanner.util.toUprightBitmap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -56,6 +57,11 @@ class CameraViewModel(
     private var lastAnalyzeAt = 0L
     private var saving = false
     private var cachedPlates: List<PlateEntity> = emptyList()
+    @Volatile private var previewWidth = 0
+    @Volatile private var previewHeight = 0
+    private var candidate: String? = null
+    private var candidateHits = 0
+    private var candidateAt = 0L
 
     private val _uiState = MutableStateFlow<CameraUiState>(CameraUiState.Idle)
     val uiState: StateFlow<CameraUiState> = _uiState.asStateFlow()
@@ -106,9 +112,29 @@ class CameraViewModel(
         _todayHit.value = hitFor(number)
     }
 
+    fun updatePreviewSize(width: Int, height: Int) {
+        if (width > 0 && height > 0) {
+            previewWidth = width
+            previewHeight = height
+        }
+    }
+
+    private fun considerLive(number: String?) {
+        val normalized = number?.let { normalizePlate(it) }?.takeIf { it.isNotBlank() } ?: return
+        val now = System.currentTimeMillis()
+        if (normalized == candidate && now - candidateAt <= 1100L) {
+            candidateHits += 1
+        } else {
+            candidate = normalized
+            candidateHits = 1
+        }
+        candidateAt = now
+        if (candidateHits >= 3) publishLive(normalized)
+    }
+
     fun onFrame(imageProxy: ImageProxy) {
         val now = System.currentTimeMillis()
-        if (analyzing || now - lastAnalyzeAt < 450) {
+        if (analyzing || now - lastAnalyzeAt < 280) {
             imageProxy.close()
             return
         }
@@ -116,23 +142,32 @@ class CameraViewModel(
             imageProxy.close()
             return
         }
-        val media = imageProxy.image
-        if (media == null) {
+        if (imageProxy.image == null) {
             imageProxy.close()
             return
         }
         analyzing = true
         lastAnalyzeAt = now
-        val image = InputImage.fromMediaImage(media, imageProxy.imageInfo.rotationDegrees)
+        val crop = try {
+            val upright = imageProxy.toUprightBitmap()
+            GuideCrop.of(upright, previewWidth, previewHeight).also { cropped ->
+                if (cropped !== upright) upright.recycle()
+            }
+        } catch (_: Exception) {
+            null
+        } finally {
+            imageProxy.close()
+        }
+        if (crop == null) {
+            analyzing = false
+            return
+        }
         viewModelScope.launch {
             try {
-                val result = recognizer.recognize(image)
-                if (result.number != null) {
-                    publishLive(result.number)
-                }
+                considerLive(recognizer.recognize(crop).number)
             } catch (_: Exception) {
             } finally {
-                imageProxy.close()
+                crop.recycle()
                 analyzing = false
             }
         }
@@ -140,17 +175,20 @@ class CameraViewModel(
 
     fun recognize(bitmap: Bitmap) {
         _uiState.value = CameraUiState.Recognizing
+        val confirmed = _liveNumber.value
         viewModelScope.launch {
             try {
-                val result = recognizer.recognize(bitmap)
+                val crop = GuideCrop.of(bitmap, previewWidth, previewHeight)
+                val result = recognizer.recognize(crop)
+                if (crop !== bitmap) crop.recycle()
                 _uiState.value = CameraUiState.Result(
-                    number = result.number ?: _liveNumber.value,
+                    number = confirmed ?: result.number,
                     rawText = result.rawText,
                     bitmap = bitmap
                 )
             } catch (e: Exception) {
                 _uiState.value = CameraUiState.Result(
-                    number = _liveNumber.value,
+                    number = confirmed,
                     rawText = "Ошибка: ${e.message}",
                     bitmap = bitmap
                 )
