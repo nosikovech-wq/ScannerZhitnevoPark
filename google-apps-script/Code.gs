@@ -71,7 +71,62 @@ function appendRows_(sheet, rows) {
   if (toAdd.length) {
     sheet.getRange(sheet.getLastRow() + 1, 1, toAdd.length, HEADERS.length).setValues(toAdd);
   }
+  sortByDate_(sheet);
+  formatSheet_(sheet);
   return { inserted: toAdd.length, skipped: skipped };
+}
+
+function sortByDate_(sheet) {
+  var last = sheet.getLastRow();
+  if (last < 3) return;
+  var range = sheet.getRange(2, 1, last - 1, HEADERS.length);
+  var values = range.getValues();
+  values.sort(function (a, b) {
+    return dateValue_(a[0]) - dateValue_(b[0]);
+  });
+  range.setValues(values);
+}
+
+function dateValue_(value) {
+  if (Object.prototype.toString.call(value) === "[object Date]" && !isNaN(value.getTime())) {
+    return value.getTime();
+  }
+  var text = String(value || "");
+  var match = text.match(/^(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?/);
+  if (!match) return 0;
+  return new Date(
+    Number(match[3]),
+    Number(match[2]) - 1,
+    Number(match[1]),
+    Number(match[4] || 0),
+    Number(match[5] || 0),
+    Number(match[6] || 0)
+  ).getTime();
+}
+
+function formatSheet_(sheet) {
+  var last = sheet.getLastRow();
+  if (last < 1) return;
+  var header = sheet.getRange(1, 1, 1, HEADERS.length);
+  header.setFontWeight("bold");
+  header.setHorizontalAlignment("center");
+  header.setVerticalAlignment("middle");
+  if (last < 2) return;
+  var data = sheet.getRange(2, 1, last - 1, HEADERS.length);
+  data.setHorizontalAlignment("left");
+  data.setVerticalAlignment("middle");
+  var flags = sheet.getRange(2, 4, last - 1, 1).getValues();
+  var backgrounds = [];
+  var colors = [];
+  for (var i = 0; i < flags.length; i++) {
+    var mark = String(flags[i][0] || "").trim().toLowerCase() === "да";
+    backgrounds.push([mark ? "#e23b3b" : "#ffffff"]);
+    colors.push([mark ? "#ffffff" : "#000000"]);
+  }
+  var flagRange = sheet.getRange(2, 4, last - 1, 1);
+  flagRange.setBackgrounds(backgrounds);
+  flagRange.setFontColors(colors);
+  if (flags.length) flagRange.setFontWeight("bold");
 }
 
 function json(obj) {

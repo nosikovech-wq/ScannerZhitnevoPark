@@ -20,7 +20,9 @@ object CsvExporter {
 
     fun share(context: Context, plates: List<PlateEntity>) {
         val fmt = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault())
-        val rows = plates.map { plate ->
+        val rows = plates
+            .sortedBy { it.timestamp }
+            .map { plate ->
             listOf(
                 fmt.format(Date(plate.timestamp)),
                 plate.number,
@@ -54,7 +56,11 @@ object CsvExporter {
             append("""<?xml version="1.0" encoding="UTF-8"?>""")
             append("""<?mso-application progid="Excel.Sheet"?>""")
             append("""<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">""")
-            append("""<Styles><Style ss:ID="Header"><Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/></Style></Styles>""")
+            append("""<Styles>""")
+            append("""<Style ss:ID="Header"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/></Style>""")
+            append("""<Style ss:ID="Cell"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/></Style>""")
+            append("""<Style ss:ID="Alert"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="11" ss:Color="#FFFFFF" ss:Bold="1"/><Interior ss:Color="#E23B3B" ss:Pattern="Solid"/></Style>""")
+            append("""</Styles>""")
             append("""<Worksheet ss:Name="TransportnyyeTekhnologii"><Table>""")
             widths.forEach { width ->
                 append("""<Column ss:AutoFitWidth="0" ss:Width="${"%.1f".format(Locale.US, width)}"/>""")
@@ -66,8 +72,9 @@ object CsvExporter {
             append("</Row>")
             rows.forEach { row ->
                 append("<Row>")
-                row.forEach { cell ->
-                    append("""<Cell><Data ss:Type="String">${xml(cell)}</Data></Cell>""")
+                row.forEachIndexed { index, cell ->
+                    val style = if (index == 3 && cell.equals("ДА", ignoreCase = true)) "Alert" else "Cell"
+                    append("""<Cell ss:StyleID="$style"><Data ss:Type="String">${xml(cell)}</Data></Cell>""")
                 }
                 append("</Row>")
             }
