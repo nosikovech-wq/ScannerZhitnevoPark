@@ -269,7 +269,7 @@ fun CameraScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    if (hit != null) "УЖЕ В БАЗЕ СЕГОДНЯ" else "НОМЕР В КАДРЕ",
+                    if (hit != null) "УЖЕ В БАЗЕ" else "НОМЕР В КАДРЕ",
                     color = if (hit != null) Danger else Subtle,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
@@ -289,14 +289,16 @@ fun CameraScreen(
                             append("Записан ")
                             append(formatWhen(hit.previousAt))
                             hit.note?.let { append(" · ").append(it) }
-                            append(". Повторно сохранить нельзя.")
+                            append(". Снова можно с ")
+                            append(formatWhen(hit.availableAt))
+                            append(".")
                         },
                         color = Danger,
                         style = MaterialTheme.typography.bodySmall
                     )
                 } else {
                     Text(
-                        "Сегодня этого номера в базе ещё нет.",
+                        "За последние 24 часа этого номера нет.",
                         color = Muted,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -389,7 +391,7 @@ private fun DuplicateNotice(
                 )
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "Записан сегодня, ${formatWhen(hit.previousAt)}.",
+                    "Записан ${formatWhen(hit.previousAt)}.",
                     color = Fg
                 )
                 hit.note?.let { note ->
@@ -398,7 +400,7 @@ private fun DuplicateNotice(
                 }
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "Повторная запись этого номера запрещена до полуночи. Завтра его можно сохранить снова.",
+                    "Повтор можно сохранить с ${formatWhen(hit.availableAt)}. Отсчёт 24 часов идёт от времени записи.",
                     color = Muted
                 )
             }

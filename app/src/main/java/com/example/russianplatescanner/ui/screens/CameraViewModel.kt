@@ -10,8 +10,9 @@ import com.example.russianplatescanner.data.PlateDao
 import com.example.russianplatescanner.data.PlateEntity
 import com.example.russianplatescanner.util.PhotoStorage
 import com.example.russianplatescanner.util.PlateRecognizer
+import com.example.russianplatescanner.util.REPEAT_LOCK_MS
 import com.example.russianplatescanner.util.normalizePlate
-import com.example.russianplatescanner.util.startOfLocalDay
+import com.example.russianplatescanner.util.repeatWindowStart
 import com.google.mlkit.vision.common.InputImage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,7 +32,8 @@ sealed class CameraUiState {
 data class TodayHit(
     val number: String,
     val previousAt: Long,
-    val note: String?
+    val note: String?,
+    val availableAt: Long
 )
 
 sealed class SaveResult {
@@ -73,11 +75,17 @@ class CameraViewModel(
         if (number.isNullOrBlank()) return null
         val normalized = normalizePlate(number)
         if (normalized.isBlank()) return null
-        val since = startOfLocalDay()
-        val hit = cachedPlates.firstOrNull {
-            it.timestamp >= since && normalizePlate(it.number) == normalized
-        } ?: return null
-        return TodayHit(number = hit.number, previousAt = hit.timestamp, note = hit.note)
+        val since = repeatWindowStart()
+        val hit = cachedPlates
+            .filter { it.timestamp >= since && normalizePlate(it.number) == normalized }
+            .maxByOrNull { it.timestamp }
+            ?: return null
+        return TodayHit(
+            number = hit.number,
+            previousAt = hit.timestamp,
+            note = hit.note,
+            availableAt = hit.timestamp + REPEAT_LOCK_MS
+        )
     }
 
     private fun publishLive(number: String?) {
@@ -147,10 +155,18 @@ class CameraViewModel(
                     onResult(SaveResult.Failed("Пустой номер"))
                     return@launch
                 }
-                val since = startOfLocalDay()
+                val since = repeatWindowStart()
                 val existing = plateDao.recordedSince(since)
-                    .firstOrNull { normalizePlate(it.number) == normalized }
-                    ?.let { TodayHit(number = it.number, previousAt = it.timestamp, note = it.note) }
+                    .filter { normalizePlate(it.number) == normalized }
+                    .maxByOrNull { it.timestamp }
+                    ?.let {
+                        TodayHit(
+                            number = it.number,
+                            previousAt = it.timestamp,
+                            note = it.note,
+                            availableAt = it.timestamp + REPEAT_LOCK_MS
+                        )
+                    }
                 if (existing != null) {
                     onResult(SaveResult.Duplicate(existing))
                     return@launch
