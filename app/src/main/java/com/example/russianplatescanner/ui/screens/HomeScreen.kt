@@ -33,6 +33,7 @@ fun HomeScreen(
             .fillMaxSize()
             .background(Bg)
             .statusBarsPadding()
+            .navigationBarsPadding()
             .padding(horizontal = 16.dp)
     ) {
         Spacer(Modifier.height(12.dp))

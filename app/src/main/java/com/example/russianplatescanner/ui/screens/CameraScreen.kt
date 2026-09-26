@@ -331,7 +331,7 @@ fun CameraScreen(
             }
             PeriodCount(label = "Месяц", value = counts.month)
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(20.dp))
     }
 
     when (val state = uiState) {
