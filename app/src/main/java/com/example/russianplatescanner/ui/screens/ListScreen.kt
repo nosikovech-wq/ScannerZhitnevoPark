@@ -251,7 +251,7 @@ fun ListScreen(
 }
 
 @Composable
-private fun DayChip(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun RowScope.DayChip(label: String, selected: Boolean, onClick: () -> Unit) {
     TextButton(
         onClick = onClick,
         modifier = Modifier
