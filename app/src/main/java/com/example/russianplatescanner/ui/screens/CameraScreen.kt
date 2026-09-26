@@ -40,7 +40,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.russianplatescanner.data.AppDatabase
+import com.example.russianplatescanner.PlateApp
 import com.example.russianplatescanner.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -55,10 +55,9 @@ fun CameraScreen(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val plateDao = remember { AppDatabase.getDatabase(context).plateDao() }
-
-    val viewModel: CameraViewModel = viewModel(
-        factory = CameraViewModelFactory(plateDao, context)
+    val app = context.applicationContext as PlateApp
+    val viewModel = viewModel<CameraViewModel>(
+        factory = CameraViewModelFactory(app.plateDao, context)
     )
 
     var hasCameraPermission by remember {
