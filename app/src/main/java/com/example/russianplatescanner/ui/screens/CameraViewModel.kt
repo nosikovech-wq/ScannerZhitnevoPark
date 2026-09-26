@@ -62,6 +62,8 @@ class CameraViewModel(
     private var candidate: String? = null
     private var candidateHits = 0
     private var candidateAt = 0L
+    private var session = 0
+    private var acceptFramesAfter = 0L
 
     private val _uiState = MutableStateFlow<CameraUiState>(CameraUiState.Idle)
     val uiState: StateFlow<CameraUiState> = _uiState.asStateFlow()
@@ -119,6 +121,29 @@ class CameraViewModel(
         }
     }
 
+    fun resumeScanner() {
+        session++
+        candidate = null
+        candidateHits = 0
+        candidateAt = 0L
+        _liveNumber.value = null
+        _todayHit.value = null
+        acceptFramesAfter = System.currentTimeMillis() + 900
+    }
+
+    fun pauseScanner() {
+        session++
+        candidate = null
+        candidateHits = 0
+        candidateAt = 0L
+        _liveNumber.value = null
+        _todayHit.value = null
+        acceptFramesAfter = Long.MAX_VALUE
+        if (_uiState.value !is CameraUiState.Idle) {
+            _uiState.value = CameraUiState.Idle
+        }
+    }
+
     private fun considerLive(number: String?) {
         val normalized = number?.let { normalizePlate(it) }?.takeIf { it.isNotBlank() } ?: return
         val now = System.currentTimeMillis()
@@ -134,7 +159,7 @@ class CameraViewModel(
 
     fun onFrame(imageProxy: ImageProxy) {
         val now = System.currentTimeMillis()
-        if (analyzing || now - lastAnalyzeAt < 280) {
+        if (analyzing || now - lastAnalyzeAt < 280 || now < acceptFramesAfter) {
             imageProxy.close()
             return
         }
@@ -148,6 +173,7 @@ class CameraViewModel(
         }
         analyzing = true
         lastAnalyzeAt = now
+        val ticket = session
         val crop = try {
             val upright = imageProxy.toUprightBitmap()
             GuideCrop.of(upright, previewWidth, previewHeight).also { cropped ->
@@ -164,7 +190,7 @@ class CameraViewModel(
         }
         viewModelScope.launch {
             try {
-                considerLive(recognizer.recognize(crop).number)
+                if (ticket == session) considerLive(recognizer.recognize(crop).number)
             } catch (_: Exception) {
             } finally {
                 crop.recycle()

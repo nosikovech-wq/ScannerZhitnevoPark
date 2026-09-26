@@ -84,6 +84,7 @@ fun CameraScreen(
     }
 
     LaunchedEffect(Unit) {
+        viewModel.resumeScanner()
         if (!hasCameraPermission) {
             permissionLauncher.launch(Manifest.permission.CAMERA)
         }
@@ -215,7 +216,11 @@ fun CameraScreen(
             if (hasCameraPermission) {
                 AndroidView(
                     factory = { ctx ->
-                        PreviewView(ctx).also { previewHolder.value = it }
+                        PreviewView(ctx).apply {
+                            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+                            scaleType = PreviewView.ScaleType.FILL_CENTER
+                            previewHolder.value = this
+                        }
                     },
                     update = { view ->
                         if (view.width > 0 && view.height > 0) {
@@ -406,6 +411,7 @@ fun CameraScreen(
 
     DisposableEffect(Unit) {
         onDispose {
+            viewModel.pauseScanner()
             runCatching { cameraHolder.value?.cameraControl?.enableTorch(false) }
             providerHolder.value?.unbindAll()
             cameraHolder.value = null
