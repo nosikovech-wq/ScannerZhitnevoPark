@@ -42,13 +42,6 @@ fun HomeScreen(
             textAlign = TextAlign.Center,
             style = androidx.compose.material3.MaterialTheme.typography.headlineMedium
         )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Автор ПО, 8-999-846-90-96",
-            modifier = Modifier.fillMaxWidth(),
-            textAlign = TextAlign.Center,
-            style = androidx.compose.material3.MaterialTheme.typography.bodyMedium
-        )
         Spacer(Modifier.height(16.dp))
 
         Row(
