@@ -30,7 +30,8 @@ object PhotoStorage {
     fun jpegBytesForUpload(path: String): ByteArray {
         val file = File(path)
         if (!file.isFile || file.length() == 0L) return ByteArray(0)
-        val bitmap = BitmapFactory.decodeFile(path) ?: return if (file.length() <= 900_000) file.readBytes() else ByteArray(0)
+        if (file.length() <= 900_000) return file.readBytes()
+        val bitmap = BitmapFactory.decodeFile(path) ?: return ByteArray(0)
         val scaled = scaleDown(bitmap, 1280)
         return try {
             ByteArrayOutputStream().use { out ->

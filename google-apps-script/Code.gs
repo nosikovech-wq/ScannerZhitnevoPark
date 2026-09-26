@@ -20,6 +20,11 @@ function doPost(e) {
       var result = appendRows_(sheet, body.rows || []);
       return json({ ok: true, inserted: result.inserted, skipped: result.skipped });
     }
+    if (body.action === "finish") {
+      sortByDate_(sheet);
+      formatSheet_(sheet);
+      return json({ ok: true });
+    }
     return json({ ok: false, error: "Неизвестное действие" });
   } catch (err) {
     return json({ ok: false, error: String(err) });
@@ -75,13 +80,13 @@ function photosFolder_() {
   return found.hasNext() ? found.next() : parent.createFolder("TransportnyyeTekhnologii-фото");
 }
 
-function savePhoto_(row) {
+function savePhoto_(row, folder) {
   var data = row.photoData || "";
   if (!data) return "";
   var bytes = Utilities.base64Decode(data);
   var name = String(row.number || "plate").replace(/[\\/:*?"<>|]/g, "_") + "_" + String(row.id || "") + ".jpg";
   var blob = Utilities.newBlob(bytes, "image/jpeg", name);
-  var file = photosFolder_().createFile(blob);
+  var file = folder.createFile(blob);
   try {
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   } catch (ignore) {}
@@ -110,6 +115,7 @@ function existingIds_(sheet) {
 
 function appendRows_(sheet, rows) {
   var index = rowIndexById_(sheet);
+  var folder = null;
   var toAdd = [];
   var skipped = 0;
   var updated = 0;
@@ -119,7 +125,8 @@ function appendRows_(sheet, rows) {
       skipped++;
       return;
     }
-    var photoUrl = savePhoto_(row);
+    if (row.photoData && !folder) folder = photosFolder_();
+    var photoUrl = folder ? savePhoto_(row, folder) : "";
     if (typeof index[id] === "number") {
       if (photoUrl) {
         sheet.getRange(index[id], 5).setValue(photoUrl);
@@ -146,8 +153,6 @@ function appendRows_(sheet, rows) {
   if (toAdd.length) {
     sheet.getRange(sheet.getLastRow() + 1, 1, toAdd.length, HEADERS.length).setValues(toAdd);
   }
-  sortByDate_(sheet);
-  formatSheet_(sheet);
   return { inserted: toAdd.length + updated, skipped: skipped };
 }
 

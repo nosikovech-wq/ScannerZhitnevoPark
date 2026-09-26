@@ -78,23 +78,39 @@ object SheetSync {
             var sent = 0
             var inserted = 0
             var skipped = already
+            var sorted = false
             val total = pending.size
             val fmt = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault())
-            for (plate in pending) {
-                if (isCancelled()) {
-                    val cancelled = Tick("Остановлено", sent, total, inserted, skipped, finished = true)
-                    report(cancelled)
-                    return@withContext cancelled
+            try {
+                for (chunk in pending.chunked(6)) {
+                    if (isCancelled()) {
+                        if (sent > 0) {
+                            report(Tick("Сортировка таблицы…", sent, total, inserted, skipped))
+                            runCatching { finish(url) }
+                            sorted = true
+                        }
+                        val cancelled = Tick("Остановлено", sent, total, inserted, skipped, finished = true)
+                        report(cancelled)
+                        return@withContext cancelled
+                    }
+                    val result = append(url, chunk, fmt)
+                    sent += chunk.size
+                    inserted += result.first
+                    skipped += result.second
+                    report(Tick("Отправка фото и строк…", sent, total, inserted, skipped))
                 }
-                val result = append(url, listOf(plate), fmt)
-                sent += 1
-                inserted += result.first
-                skipped += result.second
-                report(Tick("Отправка фото и строк…", sent, total, inserted, skipped))
+                if (sent > 0) {
+                    report(Tick("Сортировка таблицы…", sent, total, inserted, skipped))
+                    finish(url)
+                    sorted = true
+                }
+                val done = Tick("Готово", total, total, inserted, skipped, finished = true)
+                report(done)
+                done
+            } catch (e: Exception) {
+                if (sent > 0 && !sorted) runCatching { finish(url) }
+                throw e
             }
-            val done = Tick("Готово", total, total, inserted, skipped, finished = true)
-            report(done)
-            done
         } catch (e: Exception) {
             val failed = Tick(
                 phase = "Не удалось выгрузить",
@@ -146,6 +162,10 @@ object SheetSync {
         }
         val response = post(url, JSONObject().put("action", "append").put("rows", rows).toString())
         return response.optInt("inserted") to response.optInt("skipped")
+    }
+
+    private fun finish(url: String) {
+        post(url, JSONObject().put("action", "finish").toString())
     }
 
     private fun post(url: String, json: String): JSONObject {
