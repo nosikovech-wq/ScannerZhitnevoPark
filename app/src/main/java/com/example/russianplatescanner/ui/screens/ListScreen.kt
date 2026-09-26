@@ -43,7 +43,6 @@ import java.util.*
 
 @Composable
 fun ListScreen(
-    onAddClick: () -> Unit,
     onItemClick: (Long) -> Unit,
     embedded: Boolean = false
 ) {
@@ -83,36 +82,37 @@ fun ListScreen(
             .background(Bg)
             .then(if (embedded) Modifier else Modifier.statusBarsPadding())
     ) {
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = {
+                searchQuery = it
+                viewModel.search(it)
+            },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("Поиск по номеру") },
+            leadingIcon = { Icon(Icons.Outlined.Search, null, tint = Subtle) },
+            singleLine = true,
+            shape = RoundedCornerShape(8.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Border,
+                unfocusedBorderColor = Border,
+                focusedContainerColor = Surface,
+                unfocusedContainerColor = Surface,
+                focusedTextColor = Fg,
+                unfocusedTextColor = Fg,
+                cursorColor = Accent
+            )
+        )
+        Spacer(Modifier.height(8.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = {
-                    searchQuery = it
-                    viewModel.search(it)
-                },
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("Поиск по номеру") },
-                leadingIcon = { Icon(Icons.Outlined.Search, null, tint = Subtle) },
-                singleLine = true,
-                shape = RoundedCornerShape(8.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Border,
-                    unfocusedBorderColor = Border,
-                    focusedContainerColor = Surface,
-                    unfocusedContainerColor = Surface,
-                    focusedTextColor = Fg,
-                    unfocusedTextColor = Fg,
-                    cursorColor = Accent
-                )
-            )
-            Spacer(Modifier.width(8.dp))
             TextButton(
                 onClick = { CsvExporter.share(context, plates) },
                 enabled = plates.isNotEmpty(),
                 modifier = Modifier
+                    .weight(1f)
                     .height(44.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(Surface)
@@ -122,11 +122,11 @@ fun ListScreen(
                 Spacer(Modifier.width(6.dp))
                 Text("Excel", color = Fg)
             }
-            Spacer(Modifier.width(8.dp))
             TextButton(
                 onClick = { startUpload() },
                 enabled = plates.isNotEmpty() && upload?.finished != false,
                 modifier = Modifier
+                    .weight(1f)
                     .height(44.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(Surface)
@@ -341,7 +341,7 @@ private fun UploadDialog(
                 )
             } else {
                 LinearProgressIndicator(
-                    progress = if (tick.finished && tick.total == 0 && tick.error == null) 1f else fraction,
+                    progress = { if (tick.finished && tick.total == 0 && tick.error == null) 1f else fraction },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(8.dp)
