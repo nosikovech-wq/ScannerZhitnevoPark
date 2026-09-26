@@ -3,6 +3,7 @@ package com.example.russianplatescanner.ui.screens
 import android.Manifest
 import android.content.pm.PackageManager
 import android.widget.Toast
+import androidx.annotation.WorkerThread
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
@@ -521,9 +522,15 @@ private fun ResultDialog(
     )
 }
 
+// camera-provider-io-v3: ожидание камеры не на главном потоке
+@WorkerThread
+private fun loadCameraProviderBlocking(context: android.content.Context): ProcessCameraProvider {
+    return ProcessCameraProvider.getInstance(context).get()
+}
+
 private suspend fun awaitCameraProvider(context: android.content.Context): ProcessCameraProvider =
     withContext(Dispatchers.IO) {
-        ProcessCameraProvider.getInstance(context).get()
+        loadCameraProviderBlocking(context)
     }
 
 private val FlashlightOnIcon = flashlightVector(on = true)
