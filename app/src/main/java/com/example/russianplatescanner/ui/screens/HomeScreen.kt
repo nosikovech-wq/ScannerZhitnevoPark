@@ -27,17 +27,23 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import com.example.russianplatescanner.PlateApp
 import com.example.russianplatescanner.ui.theme.Accent
 import com.example.russianplatescanner.ui.theme.AccentFg
 import com.example.russianplatescanner.ui.theme.Bg
 import com.example.russianplatescanner.ui.theme.Border
+import com.example.russianplatescanner.ui.theme.Danger
 import com.example.russianplatescanner.ui.theme.Fg
 import com.example.russianplatescanner.ui.theme.Muted
 import com.example.russianplatescanner.ui.theme.Ok
 import com.example.russianplatescanner.ui.theme.Subtle
 import com.example.russianplatescanner.ui.theme.Surface
 import com.example.russianplatescanner.ui.theme.Surface2
+import com.example.russianplatescanner.util.PhotoStorage
 import com.example.russianplatescanner.util.SheetSync
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun HomeScreen(
@@ -144,8 +150,13 @@ private fun TabChip(
 @Composable
 private fun SettingsScreen() {
     val context = LocalContext.current
+    val app = context.applicationContext as PlateApp
     var url by remember { mutableStateOf(SheetSync.url(context)) }
     var saved by remember { mutableStateOf(false) }
+    var confirmClear by remember { mutableStateOf(false) }
+    var clearing by remember { mutableStateOf(false) }
+    var clearMessage by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize()) {
         Text("Настройки", color = Fg, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
@@ -178,6 +189,27 @@ private fun SettingsScreen() {
             fontSize = 13.sp
         )
         Spacer(Modifier.weight(1f))
+        Button(
+            onClick = {
+                clearMessage = null
+                confirmClear = true
+            },
+            enabled = !clearing,
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Danger,
+                contentColor = Fg,
+                disabledContainerColor = Surface2,
+                disabledContentColor = Muted
+            )
+        ) {
+            Text("Очистить базу", color = Fg, fontWeight = FontWeight.Bold)
+        }
+        clearMessage?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(it, color = if (it.startsWith("База")) Ok else Danger, fontSize = 14.sp)
+        }
+        Spacer(Modifier.height(12.dp))
         Text(
             "Автор ПО - Telegramm",
             color = Accent,
@@ -211,6 +243,97 @@ private fun SettingsScreen() {
         if (saved) {
             Spacer(Modifier.height(12.dp))
             Text("Сохранено", color = Ok, fontSize = 14.sp)
+        }
+    }
+
+    if (confirmClear) {
+        ClearDatabaseDialog(
+            busy = clearing,
+            onDismiss = { if (!clearing) confirmClear = false },
+            onConfirm = {
+                scope.launch {
+                    clearing = true
+                    try {
+                        SheetSync.clear(SheetSync.url(context))
+                        val paths = app.plateDao.allPhotoPaths()
+                        PhotoStorage.deleteAll(context, paths)
+                        app.plateDao.deleteAll()
+                        clearMessage = "База, фото и онлайн-таблица очищены"
+                        confirmClear = false
+                    } catch (e: Exception) {
+                        clearMessage = e.message ?: "Не удалось очистить базу"
+                        confirmClear = false
+                    } finally {
+                        clearing = false
+                    }
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun ClearDatabaseDialog(
+    busy: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    var secondsLeft by remember { mutableIntStateOf(10) }
+    LaunchedEffect(Unit) {
+        while (secondsLeft > 0) {
+            delay(1000)
+            secondsLeft--
+        }
+    }
+    val locked = secondsLeft > 0 || busy
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(28.dp))
+                .background(Surface)
+                .padding(20.dp)
+        ) {
+            Text("Очистить базу?", color = Fg, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Будут удалены все записи, фотографии и строки онлайн-таблицы. Вернуть их будет нельзя.",
+                color = Muted,
+                fontSize = 14.sp
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onDismiss,
+                    enabled = !busy,
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Fg, contentColor = AccentFg)
+                ) {
+                    Text("Отмена", color = AccentFg, maxLines = 1)
+                }
+                Button(
+                    onClick = onConfirm,
+                    enabled = !locked,
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Danger,
+                        contentColor = Fg,
+                        disabledContainerColor = Surface2,
+                        disabledContentColor = Muted
+                    )
+                ) {
+                    Text(
+                        when {
+                            busy -> "..."
+                            secondsLeft > 0 -> "ОЧИСТИТЬ ($secondsLeft)"
+                            else -> "ОЧИСТИТЬ"
+                        },
+                        color = if (locked) Muted else Fg,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                }
+            }
         }
     }
 }

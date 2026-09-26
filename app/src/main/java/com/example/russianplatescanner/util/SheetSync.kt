@@ -106,6 +106,10 @@ object SheetSync {
         }
     }
 
+    suspend fun clear(url: String) = withContext(Dispatchers.IO) {
+        post(url, JSONObject().put("action", "clear").toString())
+    }
+
     private fun fetchIds(url: String): Set<String> {
         val response = post(url, JSONObject().put("action", "ids").toString())
         val ids = response.optJSONArray("ids") ?: JSONArray()

@@ -7,6 +7,10 @@ function doPost(e) {
     if (body.action === "ids") {
       return json({ ok: true, ids: existingIds_(sheet) });
     }
+    if (body.action === "clear") {
+      clearSheet_(sheet);
+      return json({ ok: true });
+    }
     if (body.action === "append") {
       var result = appendRows_(sheet, body.rows || []);
       return json({ ok: true, inserted: result.inserted, skipped: result.skipped });
@@ -33,6 +37,13 @@ function sheet_() {
     sheet.hideColumns(6);
   }
   return sheet;
+}
+
+function clearSheet_(sheet) {
+  var last = sheet.getLastRow();
+  if (last > 1) {
+    sheet.deleteRows(2, last - 1);
+  }
 }
 
 function existingIds_(sheet) {
