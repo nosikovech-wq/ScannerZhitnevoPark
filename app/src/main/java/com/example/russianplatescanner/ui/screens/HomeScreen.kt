@@ -3,13 +3,17 @@ package com.example.russianplatescanner.ui.screens
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.outlined.CameraAlt
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -65,7 +69,21 @@ fun HomeScreen(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Spacer(Modifier.size(36.dp))
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(if (tab == 3) Surface2 else Surface)
+                    .clickable { tab = if (tab == 3) 0 else 3 },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Outlined.Info,
+                    contentDescription = "Инструкция",
+                    tint = if (tab == 3) Fg else Muted,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
             Text(
                 "Житнево Парк Сканер",
                 modifier = Modifier.weight(1f),
@@ -119,6 +137,7 @@ fun HomeScreen(
             when (tab) {
                 0 -> CameraScreen(embedded = true, onSaved = { tab = 1 }, onBack = {})
                 1 -> ListScreen(embedded = true, onItemClick = onItemClick)
+                3 -> HelpScreen()
                 else -> SettingsScreen()
             }
         }
@@ -145,6 +164,51 @@ private fun TabChip(
         icon()
         Spacer(Modifier.width(8.dp))
         Text(label, color = if (selected) Fg else Muted)
+    }
+}
+
+@Composable
+private fun HelpScreen() {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("Как пользоваться", color = Fg, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+        HelpCard(
+            "Сканер",
+            "Наведите номер в рамку. Сверху он появится после трёх одинаковых считываний. Если такой номер уже был за последние 24 часа, надпись станет красной. Слева от кнопки снимка — машины за сутки, справа — за месяц. Молния в углу включает фонарик."
+        )
+        HelpCard(
+            "Проверка номера",
+            "После снимка камера выключается. Номер можно поправить, заметку можно не писать. «В базу» сохраняет запись. «Ещё раз» снимает заново. Красная кнопка «Несогласованный выезд» записывает повтор, если номер уже есть за последние сутки. Обычный повтор без неё не сохраняется."
+        )
+        HelpCard(
+            "Журнал",
+            "Поиск ищет по номеру. «Все», «Сегодня» и «Дата» фильтруют список. «Excel» сохраняет таблицу на телефон. «Онлайн» отправляет новые строки и фото на Диск, уже отправленное не дублируется. Красная пометка в строке — несогласованный выезд. Нажатие открывает фото, дату и заметку. Если заметки нет, будет написано «Заметка отсутствует». Удаление убирает запись с телефона, из таблицы и с Диска."
+        )
+        HelpCard(
+            "Настройки",
+            "Шестерёнка справа от названия. Там адрес скрипта таблицы и кнопка «Сохранить». «Очистить базу» спрашивает пароль и удаляет записи, фото и онлайн-таблицу."
+        )
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun HelpCard(title: String, body: String) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(Surface)
+            .border(1.dp, Border, RoundedCornerShape(20.dp))
+            .padding(16.dp)
+    ) {
+        Text(title, color = Fg, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+        Spacer(Modifier.height(8.dp))
+        Text(body, color = Muted, fontSize = 14.sp, lineHeight = 20.sp)
     }
 }
 
