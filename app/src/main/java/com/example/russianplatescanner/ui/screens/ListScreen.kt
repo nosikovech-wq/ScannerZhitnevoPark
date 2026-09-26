@@ -54,8 +54,6 @@ fun ListScreen(
 
     val plates by viewModel.plates.collectAsState(initial = emptyList())
     var searchQuery by remember { mutableStateOf("") }
-    var urlDialog by remember { mutableStateOf(false) }
-    var urlDraft by remember { mutableStateOf("") }
     var upload by remember { mutableStateOf<SheetSync.Tick?>(null) }
     var cancelUpload by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -63,8 +61,15 @@ fun ListScreen(
     fun startUpload() {
         val url = SheetSync.url(context)
         if (!url.startsWith("https://")) {
-            urlDraft = url
-            urlDialog = true
+            upload = SheetSync.Tick(
+                phase = "Нет адреса скрипта",
+                done = 0,
+                total = 0,
+                inserted = 0,
+                skipped = 0,
+                finished = true,
+                error = "Укажите ссылку в настройках."
+            )
             return
         }
         cancelUpload = false
@@ -167,29 +172,11 @@ fun ListScreen(
         }
     }
 
-    if (urlDialog) {
-        UrlDialog(
-            value = urlDraft,
-            onValue = { urlDraft = it },
-            onDismiss = { urlDialog = false },
-            onSave = {
-                SheetSync.saveUrl(context, urlDraft)
-                urlDialog = false
-                startUpload()
-            }
-        )
-    }
-
     upload?.let { tick ->
         UploadDialog(
             tick = tick,
             onCancel = { cancelUpload = true },
-            onClose = { upload = null },
-            onChangeUrl = {
-                upload = null
-                urlDraft = SheetSync.url(context)
-                urlDialog = true
-            }
+            onClose = { upload = null }
         )
     }
 }
@@ -251,71 +238,10 @@ private fun formatPlateUi(number: String): String {
 }
 
 @Composable
-private fun UrlDialog(
-    value: String,
-    onValue: (String) -> Unit,
-    onDismiss: () -> Unit,
-    onSave: () -> Unit
-) {
-    Dialog(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(28.dp))
-                .background(Surface)
-                .padding(20.dp)
-        ) {
-            Text("Адрес онлайн-таблицы", color = Fg, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "Вставьте ссылку веб-приложения Google, которая заканчивается на /exec",
-                color = Muted,
-                fontSize = 14.sp
-            )
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
-                value = value,
-                onValueChange = onValue,
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("https://script.google.com/...") },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Fg,
-                    unfocusedTextColor = Fg,
-                    focusedBorderColor = Accent,
-                    unfocusedBorderColor = Border,
-                    cursorColor = Fg
-                )
-            )
-            Spacer(Modifier.height(12.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = onDismiss,
-                    modifier = Modifier.weight(1f).height(48.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Fg, contentColor = AccentFg)
-                ) { Text("Отмена", color = AccentFg, maxLines = 1) }
-                Button(
-                    onClick = onSave,
-                    enabled = value.trim().startsWith("https://"),
-                    modifier = Modifier.weight(1f).height(48.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Ok,
-                        contentColor = AccentFg,
-                        disabledContainerColor = Surface2,
-                        disabledContentColor = Muted
-                    )
-                ) { Text("Далее", fontWeight = FontWeight.Bold, maxLines = 1) }
-            }
-        }
-    }
-}
-
-@Composable
 private fun UploadDialog(
     tick: SheetSync.Tick,
     onCancel: () -> Unit,
-    onClose: () -> Unit,
-    onChangeUrl: () -> Unit
+    onClose: () -> Unit
 ) {
     val fraction = if (tick.total <= 0) 0f else tick.done.toFloat() / tick.total.toFloat()
     Dialog(onDismissRequest = { if (tick.finished) onClose() else onCancel() }) {
@@ -366,18 +292,11 @@ private fun UploadDialog(
             }
             Spacer(Modifier.height(16.dp))
             if (tick.finished) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = onChangeUrl,
-                        modifier = Modifier.weight(1f).height(48.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Fg, contentColor = AccentFg)
-                    ) { Text("Адрес", color = AccentFg, maxLines = 1) }
-                    Button(
-                        onClick = onClose,
-                        modifier = Modifier.weight(1f).height(48.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Ok, contentColor = AccentFg)
-                    ) { Text("Закрыть", color = AccentFg, fontWeight = FontWeight.Bold, maxLines = 1) }
-                }
+                Button(
+                    onClick = onClose,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Ok, contentColor = AccentFg)
+                ) { Text("Закрыть", color = AccentFg, fontWeight = FontWeight.Bold, maxLines = 1) }
             } else {
                 Button(
                     onClick = onCancel,
