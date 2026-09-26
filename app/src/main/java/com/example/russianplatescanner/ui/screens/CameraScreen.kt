@@ -331,12 +331,6 @@ fun CameraScreen(
             }
             PeriodCount(label = "Месяц", value = counts.month)
         }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Реал-тайм читает номер в рамке. Кнопка сохраняет кадр.",
-            color = Subtle,
-            style = MaterialTheme.typography.bodySmall
-        )
         Spacer(Modifier.height(12.dp))
     }
 

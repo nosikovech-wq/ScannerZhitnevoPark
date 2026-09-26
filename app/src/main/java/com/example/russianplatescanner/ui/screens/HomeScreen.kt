@@ -35,8 +35,6 @@ fun HomeScreen(
             .padding(horizontal = 16.dp)
     ) {
         Spacer(Modifier.height(12.dp))
-        Text("ЛОКАЛЬНАЯ БАЗА", style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
-        Spacer(Modifier.height(4.dp))
         Text("ЖитневоПарк Сканер", style = androidx.compose.material3.MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(4.dp))
         Text(
