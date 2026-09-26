@@ -95,6 +95,7 @@ fun CameraScreen(
     val uiState by viewModel.uiState.collectAsState()
     val liveNumber by viewModel.liveNumber.collectAsState()
     val todayHit by viewModel.todayHit.collectAsState()
+    val counts by viewModel.counts.collectAsState()
     var blocked by remember { mutableStateOf<SaveResult.Duplicate?>(null) }
 
     LaunchedEffect(torchOn, cameraHolder.value) {
@@ -307,18 +308,28 @@ fun CameraScreen(
         }
 
         val shooting = uiState is CameraUiState.Recognizing
-        FloatingActionButton(
-            onClick = { if (!shooting) takeShot() },
-            containerColor = Accent,
-            contentColor = AccentFg,
-            shape = CircleShape,
-            modifier = Modifier.size(64.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 28.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            if (shooting) {
-                CircularProgressIndicator(modifier = Modifier.size(22.dp), color = AccentFg, strokeWidth = 2.dp)
-            } else {
-                Icon(Icons.Default.Camera, "Сфотографировать", modifier = Modifier.size(28.dp))
+            PeriodCount(label = "Сутки", value = counts.day)
+            FloatingActionButton(
+                onClick = { if (!shooting) takeShot() },
+                containerColor = Accent,
+                contentColor = AccentFg,
+                shape = CircleShape,
+                modifier = Modifier.size(64.dp)
+            ) {
+                if (shooting) {
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), color = AccentFg, strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Default.Camera, "Сфотографировать", modifier = Modifier.size(28.dp))
+                }
             }
+            PeriodCount(label = "Месяц", value = counts.month)
         }
         Spacer(Modifier.height(8.dp))
         Text(
@@ -435,6 +446,26 @@ private fun DuplicateNotice(
 
 private fun formatWhen(timestamp: Long): String {
     return SimpleDateFormat("d MMMM, HH:mm", Locale("ru")).format(Date(timestamp))
+}
+
+@Composable
+private fun PeriodCount(label: String, value: Int) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.width(84.dp)
+    ) {
+        Text(
+            text = value.toString(),
+            color = Fg,
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = label,
+            color = Subtle,
+            fontSize = 12.sp
+        )
+    }
 }
 
 @Composable

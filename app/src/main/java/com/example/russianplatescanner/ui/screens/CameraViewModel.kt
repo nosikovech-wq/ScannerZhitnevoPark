@@ -10,6 +10,8 @@ import com.example.russianplatescanner.data.PlateDao
 import com.example.russianplatescanner.data.PlateEntity
 import com.example.russianplatescanner.util.PhotoStorage
 import com.example.russianplatescanner.util.PlateRecognizer
+import com.example.russianplatescanner.util.startOfLocalDay
+import com.example.russianplatescanner.util.startOfLocalMonth
 import com.example.russianplatescanner.util.REPEAT_LOCK_MS
 import com.example.russianplatescanner.util.normalizePlate
 import com.example.russianplatescanner.util.repeatWindowStart
@@ -42,6 +44,8 @@ sealed class SaveResult {
     data class Failed(val message: String) : SaveResult()
 }
 
+data class PeriodCounts(val day: Int, val month: Int)
+
 class CameraViewModel(
     private val plateDao: PlateDao,
     private val appContext: Context
@@ -62,11 +66,20 @@ class CameraViewModel(
     private val _todayHit = MutableStateFlow<TodayHit?>(null)
     val todayHit: StateFlow<TodayHit?> = _todayHit.asStateFlow()
 
+    private val _counts = MutableStateFlow(PeriodCounts(0, 0))
+    val counts: StateFlow<PeriodCounts> = _counts.asStateFlow()
+
     init {
         viewModelScope.launch {
             plateDao.getAll().collect { list ->
                 cachedPlates = list
                 _todayHit.value = hitFor(_liveNumber.value)
+                val dayStart = startOfLocalDay()
+                val monthStart = startOfLocalMonth()
+                _counts.value = PeriodCounts(
+                    day = list.count { it.timestamp >= dayStart },
+                    month = list.count { it.timestamp >= monthStart }
+                )
             }
         }
     }

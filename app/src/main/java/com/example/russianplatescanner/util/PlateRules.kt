@@ -20,3 +20,22 @@ fun normalizePlate(raw: String): String {
 const val REPEAT_LOCK_MS = 24L * 60 * 60 * 1000
 
 fun repeatWindowStart(now: Long = System.currentTimeMillis()): Long = now - REPEAT_LOCK_MS
+
+/** Local midnight. Used for the daily counter, not for the repeat lock. */
+fun startOfLocalDay(now: Long = System.currentTimeMillis()): Long {
+    val cal = java.util.Calendar.getInstance()
+    cal.timeInMillis = now
+    cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+    cal.set(java.util.Calendar.MINUTE, 0)
+    cal.set(java.util.Calendar.SECOND, 0)
+    cal.set(java.util.Calendar.MILLISECOND, 0)
+    return cal.timeInMillis
+}
+
+/** First moment of the current local month. */
+fun startOfLocalMonth(now: Long = System.currentTimeMillis()): Long {
+    val cal = java.util.Calendar.getInstance()
+    cal.timeInMillis = startOfLocalDay(now)
+    cal.set(java.util.Calendar.DAY_OF_MONTH, 1)
+    return cal.timeInMillis
+}

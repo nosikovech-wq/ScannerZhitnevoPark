@@ -5,8 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ListAlt
 import androidx.compose.material.icons.outlined.CameraAlt
-import androidx.compose.material.icons.outlined.ListAlt
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -62,7 +62,7 @@ fun HomeScreen(
             TabChip(
                 selected = tab == 1,
                 label = "Журнал",
-                icon = { Icon(Icons.Outlined.ListAlt, null, modifier = Modifier.size(16.dp)) },
+                icon = { Icon(Icons.AutoMirrored.Outlined.ListAlt, null, modifier = Modifier.size(16.dp)) },
                 onClick = { tab = 1 },
                 modifier = Modifier.weight(1f)
             )
