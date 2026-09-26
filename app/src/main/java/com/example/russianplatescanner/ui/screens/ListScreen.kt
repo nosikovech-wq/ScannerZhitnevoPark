@@ -117,7 +117,7 @@ fun ListScreen(
                 cursorColor = Accent
             )
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -142,7 +142,7 @@ fun ListScreen(
                 showDatePicker = true
             }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -152,10 +152,11 @@ fun ListScreen(
                 enabled = plates.isNotEmpty(),
                 modifier = Modifier
                     .weight(1f)
-                    .height(44.dp)
+                    .height(48.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(Surface)
-                    .border(1.dp, Border, RoundedCornerShape(12.dp))
+                    .border(1.dp, Border, RoundedCornerShape(12.dp)),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)
             ) {
                 Icon(Icons.Outlined.FileDownload, contentDescription = "Excel", tint = Fg, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
@@ -166,10 +167,11 @@ fun ListScreen(
                 enabled = plates.isNotEmpty() && upload?.finished != false,
                 modifier = Modifier
                     .weight(1f)
-                    .height(44.dp)
+                    .height(48.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(Surface)
-                    .border(1.dp, Border, RoundedCornerShape(12.dp))
+                    .border(1.dp, Border, RoundedCornerShape(12.dp)),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)
             ) {
                 Icon(Icons.Outlined.CloudUpload, contentDescription = "Онлайн", tint = Fg, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
@@ -256,10 +258,11 @@ private fun RowScope.DayChip(label: String, selected: Boolean, onClick: () -> Un
         onClick = onClick,
         modifier = Modifier
             .weight(1f)
-            .height(36.dp)
+            .height(44.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(if (selected) Surface2 else Surface)
-            .border(1.dp, if (selected) Fg else Border, RoundedCornerShape(12.dp))
+            .border(1.dp, if (selected) Fg else Border, RoundedCornerShape(12.dp)),
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp)
     ) {
         Text(label, color = if (selected) Fg else Muted, fontSize = 13.sp, maxLines = 1)
     }
