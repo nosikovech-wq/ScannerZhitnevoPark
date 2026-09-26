@@ -1,6 +1,7 @@
 package com.example.russianplatescanner.util
 
 import android.content.Context
+import android.util.Base64
 import com.example.russianplatescanner.data.PlateEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -56,8 +57,11 @@ object SheetSync {
         }
         try {
             report(Tick("Проверка строк в таблице…", 0, 0, 0, 0))
-            val known = fetchIds(url)
-            val pending = plates.filter { it.id.toString() !in known }
+            val remote = fetchStatus(url)
+            val pending = plates.filter { plate ->
+                val known = remote[plate.id.toString()]
+                known == null || !known
+            }
             val already = plates.size - pending.size
             if (pending.isEmpty()) {
                 val done = Tick(
@@ -76,17 +80,17 @@ object SheetSync {
             var skipped = already
             val total = pending.size
             val fmt = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault())
-            for (chunk in pending.chunked(8)) {
+            for (plate in pending) {
                 if (isCancelled()) {
                     val cancelled = Tick("Остановлено", sent, total, inserted, skipped, finished = true)
                     report(cancelled)
                     return@withContext cancelled
                 }
-                val result = append(url, chunk, fmt)
-                sent += chunk.size
+                val result = append(url, listOf(plate), fmt)
+                sent += 1
                 inserted += result.first
                 skipped += result.second
-                report(Tick("Отправка строк…", sent, total, inserted, skipped))
+                report(Tick("Отправка фото и строк…", sent, total, inserted, skipped))
             }
             val done = Tick("Готово", total, total, inserted, skipped, finished = true)
             report(done)
@@ -110,11 +114,15 @@ object SheetSync {
         post(url, JSONObject().put("action", "clear").toString())
     }
 
-    private fun fetchIds(url: String): Set<String> {
-        val response = post(url, JSONObject().put("action", "ids").toString())
-        val ids = response.optJSONArray("ids") ?: JSONArray()
-        return buildSet {
-            for (i in 0 until ids.length()) add(ids.optString(i))
+    private fun fetchStatus(url: String): Map<String, Boolean> {
+        val response = post(url, JSONObject().put("action", "status").toString())
+        val rows = response.optJSONArray("rows") ?: JSONArray()
+        return buildMap {
+            for (i in 0 until rows.length()) {
+                val row = rows.optJSONObject(i) ?: continue
+                val id = row.optString("id")
+                if (id.isNotBlank()) put(id, row.optBoolean("hasPhoto"))
+            }
         }
     }
 
@@ -125,6 +133,7 @@ object SheetSync {
     ): Pair<Int, Int> {
         val rows = JSONArray()
         chunk.forEach { plate ->
+            val photo = PhotoStorage.jpegBytesForUpload(plate.photoPath)
             rows.put(
                 JSONObject()
                     .put("id", plate.id.toString())
@@ -132,7 +141,7 @@ object SheetSync {
                     .put("number", plate.number)
                     .put("note", plate.note ?: "")
                     .put("unauthorized", plate.unauthorizedExit)
-                    .put("photo", plate.photoPath)
+                    .put("photoData", if (photo.isEmpty()) "" else Base64.encodeToString(photo, Base64.NO_WRAP))
             )
         }
         val response = post(url, JSONObject().put("action", "append").put("rows", rows).toString())

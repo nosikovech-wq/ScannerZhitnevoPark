@@ -2,6 +2,8 @@ package com.example.russianplatescanner.util
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 
@@ -23,6 +25,22 @@ object PhotoStorage {
             if (scaled !== bitmap) scaled.recycle()
         }
         return file.absolutePath
+    }
+
+    fun jpegBytesForUpload(path: String): ByteArray {
+        val file = File(path)
+        if (!file.isFile || file.length() == 0L) return ByteArray(0)
+        val bitmap = BitmapFactory.decodeFile(path) ?: return if (file.length() <= 900_000) file.readBytes() else ByteArray(0)
+        val scaled = scaleDown(bitmap, 1280)
+        return try {
+            ByteArrayOutputStream().use { out ->
+                scaled.compress(Bitmap.CompressFormat.JPEG, 70, out)
+                out.toByteArray()
+            }
+        } finally {
+            if (scaled !== bitmap) scaled.recycle()
+            bitmap.recycle()
+        }
     }
 
     private fun scaleDown(bitmap: Bitmap, maxEdge: Int): Bitmap {

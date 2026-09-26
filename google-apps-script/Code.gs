@@ -4,8 +4,8 @@ function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
     var sheet = sheet_();
-    if (body.action === "ids") {
-      return json({ ok: true, ids: existingIds_(sheet) });
+    if (body.action === "ids" || body.action === "status") {
+      return json({ ok: true, ids: existingIds_(sheet), rows: statusRows_(sheet) });
     }
     if (body.action === "clear") {
       clearSheet_(sheet);
@@ -42,8 +42,53 @@ function sheet_() {
 function clearSheet_(sheet) {
   var last = sheet.getLastRow();
   if (last > 1) {
+    var links = sheet.getRange(2, 5, last - 1, 1).getValues();
+    for (var i = 0; i < links.length; i++) trashDriveFile_(links[i][0]);
     sheet.deleteRows(2, last - 1);
   }
+}
+
+function statusRows_(sheet) {
+  var last = sheet.getLastRow();
+  if (last < 2) return [];
+  var values = sheet.getRange(2, 5, last - 1, 2).getValues();
+  var rows = [];
+  for (var i = 0; i < values.length; i++) {
+    var photo = String(values[i][0] || "");
+    var id = String(values[i][1] || "");
+    if (!id) continue;
+    rows.push({ id: id, hasPhoto: photo.indexOf("https://drive.google.com/") === 0 });
+  }
+  return rows;
+}
+
+function photosFolder_() {
+  var ss = SpreadsheetApp.getActive();
+  var file = DriveApp.getFileById(ss.getId());
+  var parent = file.getParents().hasNext() ? file.getParents().next() : DriveApp.getRootFolder();
+  var found = parent.getFoldersByName("TransportnyyeTekhnologii-фото");
+  return found.hasNext() ? found.next() : parent.createFolder("TransportnyyeTekhnologii-фото");
+}
+
+function savePhoto_(row) {
+  var data = row.photoData || "";
+  if (!data) return "";
+  var bytes = Utilities.base64Decode(data);
+  var name = String(row.number || "plate").replace(/[\\/:*?"<>|]/g, "_") + "_" + String(row.id || "") + ".jpg";
+  var blob = Utilities.newBlob(bytes, "image/jpeg", name);
+  var file = photosFolder_().createFile(blob);
+  try {
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch (ignore) {}
+  return "https://drive.google.com/file/d/" + file.getId() + "/view";
+}
+
+function trashDriveFile_(value) {
+  var match = String(value || "").match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (!match) return;
+  try {
+    DriveApp.getFileById(match[1]).setTrashed(true);
+  } catch (ignore) {}
 }
 
 function existingIds_(sheet) {
@@ -59,23 +104,37 @@ function existingIds_(sheet) {
 }
 
 function appendRows_(sheet, rows) {
-  var known = {};
-  existingIds_(sheet).forEach(function (id) { known[id] = true; });
+  var index = rowIndexById_(sheet);
   var toAdd = [];
   var skipped = 0;
+  var updated = 0;
   rows.forEach(function (row) {
     var id = String(row.id || "");
-    if (!id || known[id]) {
+    if (!id) {
       skipped++;
       return;
     }
-    known[id] = true;
+    var photoUrl = savePhoto_(row);
+    if (typeof index[id] === "number") {
+      if (photoUrl) {
+        sheet.getRange(index[id], 5).setValue(photoUrl);
+        updated++;
+      } else {
+        skipped++;
+      }
+      return;
+    }
+    if (index[id]) {
+      skipped++;
+      return;
+    }
+    index[id] = true;
     toAdd.push([
       row.date || "",
       row.number || "",
       row.note || "",
       row.unauthorized ? "ДА" : "",
-      row.photo || "",
+      photoUrl,
       id
     ]);
   });
@@ -84,7 +143,19 @@ function appendRows_(sheet, rows) {
   }
   sortByDate_(sheet);
   formatSheet_(sheet);
-  return { inserted: toAdd.length, skipped: skipped };
+  return { inserted: toAdd.length + updated, skipped: skipped };
+}
+
+function rowIndexById_(sheet) {
+  var last = sheet.getLastRow();
+  var index = {};
+  if (last < 2) return index;
+  var ids = sheet.getRange(2, 6, last - 1, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    var id = String(ids[i][0] || "");
+    if (id) index[id] = i + 2;
+  }
+  return index;
 }
 
 function sortByDate_(sheet) {
@@ -122,6 +193,7 @@ function formatSheet_(sheet) {
   header.setFontWeight("bold");
   header.setHorizontalAlignment("center");
   header.setVerticalAlignment("middle");
+  sheet.setColumnWidth(5, 360);
   if (last < 2) return;
   var data = sheet.getRange(2, 1, last - 1, HEADERS.length);
   data.setHorizontalAlignment("left");
