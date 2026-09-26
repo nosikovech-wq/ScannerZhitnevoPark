@@ -13,12 +13,15 @@ import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,6 +41,7 @@ import com.example.russianplatescanner.ui.theme.*
 import com.example.russianplatescanner.util.CsvExporter
 import com.example.russianplatescanner.util.SheetSync
 import com.example.russianplatescanner.util.formatPlateUi
+import com.example.russianplatescanner.util.startOfLocalDay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -55,6 +59,8 @@ fun ListScreen(
 
     val plates by viewModel.plates.collectAsState(initial = emptyList())
     var searchQuery by remember { mutableStateOf("") }
+    var dayStart by remember { mutableStateOf<Long?>(null) }
+    var showDatePicker by remember { mutableStateOf(false) }
     var upload by remember { mutableStateOf<SheetSync.Tick?>(null) }
     var cancelUpload by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -114,6 +120,31 @@ fun ListScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            DayChip("Все", dayStart == null) {
+                dayStart = null
+                viewModel.setDay(null)
+            }
+            DayChip("Сегодня", dayStart == startOfLocalDay()) {
+                val start = startOfLocalDay()
+                dayStart = start
+                viewModel.setDay(start)
+            }
+            DayChip(
+                label = if (dayStart != null && dayStart != startOfLocalDay()) {
+                    SimpleDateFormat("dd.MM", Locale.getDefault()).format(Date(dayStart!!))
+                } else {
+                    "Дата"
+                },
+                selected = dayStart != null && dayStart != startOfLocalDay()
+            ) {
+                showDatePicker = true
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             TextButton(
                 onClick = { CsvExporter.share(context, plates) },
                 enabled = plates.isNotEmpty(),
@@ -155,9 +186,11 @@ fun ListScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = if (searchQuery.isBlank())
-                        "База пуста. Отсканируйте номер."
-                    else "Ничего не найдено",
+                    text = when {
+                        searchQuery.isNotBlank() -> "Ничего не найдено"
+                        dayStart != null -> "За этот день записей нет"
+                        else -> "База пуста. Отсканируйте номер."
+                    },
                     color = Muted
                 )
             }
@@ -179,6 +212,54 @@ fun ListScreen(
             onCancel = { cancelUpload = true },
             onClose = { upload = null }
         )
+    }
+
+    if (showDatePicker) {
+        val pickerState = rememberDatePickerState()
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pickerState.selectedDateMillis?.let { utc ->
+                            val picked = Calendar.getInstance().apply { timeInMillis = utc }
+                            val local = Calendar.getInstance().apply {
+                                set(Calendar.YEAR, picked.get(Calendar.YEAR))
+                                set(Calendar.MONTH, picked.get(Calendar.MONTH))
+                                set(Calendar.DAY_OF_MONTH, picked.get(Calendar.DAY_OF_MONTH))
+                                set(Calendar.HOUR_OF_DAY, 0)
+                                set(Calendar.MINUTE, 0)
+                                set(Calendar.SECOND, 0)
+                                set(Calendar.MILLISECOND, 0)
+                            }
+                            dayStart = local.timeInMillis
+                            viewModel.setDay(local.timeInMillis)
+                        }
+                        showDatePicker = false
+                    }
+                ) { Text("Ок", color = AccentFg) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Отмена", color = Muted) }
+            }
+        ) {
+            DatePicker(state = pickerState)
+        }
+    }
+}
+
+@Composable
+private fun DayChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier
+            .weight(1f)
+            .height(36.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (selected) Surface2 else Surface)
+            .border(1.dp, if (selected) Fg else Border, RoundedCornerShape(12.dp))
+    ) {
+        Text(label, color = if (selected) Fg else Muted, fontSize = 13.sp, maxLines = 1)
     }
 }
 

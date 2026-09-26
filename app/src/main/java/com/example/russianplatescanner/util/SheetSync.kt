@@ -168,6 +168,10 @@ object SheetSync {
         post(url, JSONObject().put("action", "finish").toString())
     }
 
+    suspend fun remove(url: String, id: Long) = withContext(Dispatchers.IO) {
+        post(url, JSONObject().put("action", "remove").put("id", id.toString()).toString())
+    }
+
     private fun post(url: String, json: String): JSONObject {
         var current = url
         var sendBody = true

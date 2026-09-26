@@ -16,7 +16,7 @@ import com.example.russianplatescanner.util.startOfLocalMonth
 import com.example.russianplatescanner.util.REPEAT_LOCK_MS
 import com.example.russianplatescanner.util.correctPlate
 import com.example.russianplatescanner.util.repeatWindowStart
-import com.example.russianplatescanner.util.toUprightBitmap
+import com.example.russianplatescanner.util.toGuideBitmap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -175,10 +175,7 @@ class CameraViewModel(
         lastAnalyzeAt = now
         val ticket = session
         val crop = try {
-            val upright = imageProxy.toUprightBitmap()
-            GuideCrop.of(upright, previewWidth, previewHeight).also { cropped ->
-                if (cropped !== upright) upright.recycle()
-            }
+            imageProxy.toGuideBitmap(previewWidth, previewHeight)
         } catch (_: Exception) {
             null
         } finally {
@@ -208,7 +205,7 @@ class CameraViewModel(
                 val result = recognizer.recognize(crop)
                 if (crop !== bitmap) crop.recycle()
                 _uiState.value = CameraUiState.Result(
-                    number = confirmed ?: result.number,
+                    number = result.number ?: confirmed,
                     rawText = result.rawText,
                     bitmap = bitmap
                 )

@@ -25,6 +25,10 @@ function doPost(e) {
       formatSheet_(sheet);
       return json({ ok: true });
     }
+    if (body.action === "remove") {
+      var removed = removeRow_(sheet, String(body.id || ""));
+      return json({ ok: true, removed: removed });
+    }
     return json({ ok: false, error: "Неизвестное действие" });
   } catch (err) {
     return json({ ok: false, error: String(err) });
@@ -154,6 +158,16 @@ function appendRows_(sheet, rows) {
     sheet.getRange(sheet.getLastRow() + 1, 1, toAdd.length, HEADERS.length).setValues(toAdd);
   }
   return { inserted: toAdd.length + updated, skipped: skipped };
+}
+
+function removeRow_(sheet, id) {
+  if (!id) return false;
+  var index = rowIndexById_(sheet);
+  var row = index[id];
+  if (typeof row !== "number") return false;
+  trashDriveFile_(sheet.getRange(row, 5).getValue());
+  sheet.deleteRow(row);
+  return true;
 }
 
 function rowIndexById_(sheet) {

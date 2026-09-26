@@ -54,7 +54,7 @@ private fun preparePlateText(raw: String): String {
 private fun fixPlate(prepared: String): String? {
     for ((shape, pattern) in plateShapes) {
         val token = pattern.find(prepared)?.value ?: continue
-        return buildString {
+        val fixed = buildString {
             token.forEachIndexed { index, ch ->
                 val letterSlot = when (shape) {
                     PlateShape.STANDARD -> index == 0 || index == 4 || index == 5
@@ -69,8 +69,17 @@ private fun fixPlate(prepared: String): String? {
                 )
             }
         }
+        if (validRegion(fixed.drop(6))) return fixed
     }
     return null
+}
+
+private fun validRegion(code: String): Boolean {
+    val value = code.toIntOrNull() ?: return false
+    if (value in 1..99) return true
+    if (value !in 100..999) return false
+    val base = value % 100
+    return base in 1..99
 }
 
 /** Spaces for the journal: standard, trailer and motorcycle plates. */

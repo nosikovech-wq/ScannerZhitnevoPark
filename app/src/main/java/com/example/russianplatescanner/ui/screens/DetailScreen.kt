@@ -22,7 +22,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.russianplatescanner.PlateApp
 import com.example.russianplatescanner.ui.theme.*
-import com.example.russianplatescanner.util.PhotoStorage
 import com.example.russianplatescanner.util.formatPlateUi
 import java.text.SimpleDateFormat
 import java.util.*
@@ -35,7 +34,7 @@ fun DetailScreen(
     val context = LocalContext.current
     val app = context.applicationContext as PlateApp
     val viewModel: DetailViewModel = viewModel(
-        factory = DetailViewModelFactory(app.plateDao)
+        factory = DetailViewModelFactory(app.plateDao, context.applicationContext)
     )
 
     LaunchedEffect(plateId) {
@@ -120,12 +119,11 @@ fun DetailScreen(
             onDismissRequest = { showDeleteDialog = false },
             containerColor = Surface,
             title = { Text("Удалить запись?", color = Fg) },
-            text = { Text("Номер и фото будут удалены безвозвратно.", color = Muted) },
+            text = { Text("Номер и фото будут удалены с телефона, из онлайн-таблицы и с Диска.", color = Muted) },
             confirmButton = {
                 TextButton(
                     onClick = {
                         plate?.let {
-                            PhotoStorage.deletePhoto(it.photoPath)
                             viewModel.delete(it) {
                                 showDeleteDialog = false
                                 onBack()
