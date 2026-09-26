@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -42,7 +43,6 @@ import com.example.russianplatescanner.ui.theme.Surface
 import com.example.russianplatescanner.ui.theme.Surface2
 import com.example.russianplatescanner.util.PhotoStorage
 import com.example.russianplatescanner.util.SheetSync
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -189,6 +189,20 @@ private fun SettingsScreen() {
             fontSize = 13.sp
         )
         Spacer(Modifier.weight(1f))
+        Text(
+            "Автор ПО - Telegram",
+            color = Accent,
+            fontSize = 15.sp,
+            textAlign = TextAlign.Center,
+            textDecoration = TextDecoration.Underline,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/helloexec")))
+                }
+                .padding(vertical = 12.dp)
+        )
+        Spacer(Modifier.height(8.dp))
         Button(
             onClick = {
                 clearMessage = null
@@ -209,20 +223,6 @@ private fun SettingsScreen() {
             Spacer(Modifier.height(8.dp))
             Text(it, color = if (it.startsWith("База")) Ok else Danger, fontSize = 14.sp)
         }
-        Spacer(Modifier.height(12.dp))
-        Text(
-            "Автор ПО - Telegramm",
-            color = Accent,
-            fontSize = 15.sp,
-            textAlign = TextAlign.Center,
-            textDecoration = TextDecoration.Underline,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/helloexec")))
-                }
-                .padding(vertical = 12.dp)
-        )
         Spacer(Modifier.height(8.dp))
         Button(
             onClick = {
@@ -278,14 +278,8 @@ private fun ClearDatabaseDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
-    var secondsLeft by remember { mutableIntStateOf(10) }
-    LaunchedEffect(Unit) {
-        while (secondsLeft > 0) {
-            delay(1000)
-            secondsLeft--
-        }
-    }
-    val locked = secondsLeft > 0 || busy
+    var password by remember { mutableStateOf("") }
+    val passwordOk = password == "Valter2018dvo"
     Dialog(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -301,6 +295,30 @@ private fun ClearDatabaseDialog(
                 color = Muted,
                 fontSize = 14.sp
             )
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = password,
+                onValueChange = { password = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Пароль") },
+                visualTransformation = PasswordVisualTransformation(),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Fg,
+                    unfocusedTextColor = Fg,
+                    focusedBorderColor = Accent,
+                    unfocusedBorderColor = Border,
+                    focusedLabelColor = Muted,
+                    unfocusedLabelColor = Muted,
+                    cursorColor = Fg,
+                    focusedContainerColor = Surface2,
+                    unfocusedContainerColor = Surface2
+                )
+            )
+            if (password.isNotEmpty() && !passwordOk) {
+                Spacer(Modifier.height(6.dp))
+                Text("Неверный пароль", color = Danger, fontSize = 13.sp)
+            }
             Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
@@ -313,7 +331,7 @@ private fun ClearDatabaseDialog(
                 }
                 Button(
                     onClick = onConfirm,
-                    enabled = !locked,
+                    enabled = passwordOk && !busy,
                     modifier = Modifier.weight(1f).height(48.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Danger,
@@ -323,12 +341,8 @@ private fun ClearDatabaseDialog(
                     )
                 ) {
                     Text(
-                        when {
-                            busy -> "..."
-                            secondsLeft > 0 -> "ОЧИСТИТЬ ($secondsLeft)"
-                            else -> "ОЧИСТИТЬ"
-                        },
-                        color = if (locked) Muted else Fg,
+                        if (busy) "..." else "ОЧИСТИТЬ",
+                        color = if (passwordOk && !busy) Fg else Muted,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1
                     )
