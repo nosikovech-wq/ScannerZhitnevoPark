@@ -215,36 +215,20 @@ fun CameraScreen(
                     .border(2.dp, Accent.copy(alpha = 0.9f), RoundedCornerShape(8.dp))
             )
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp)
-                    .align(Alignment.TopCenter),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
+            liveNumber?.let { number ->
                 Text(
-                    "Реал-тайм OCR",
-                    color = Muted,
+                    number,
+                    color = if (todayHit != null) Danger else Fg,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 28.sp,
                     modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 12.dp)
                         .clip(RoundedCornerShape(50))
-                        .background(Bg.copy(alpha = 0.7f))
-                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                        .background(if (todayHit != null) Danger.copy(alpha = 0.22f) else Bg.copy(alpha = 0.72f))
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
                 )
-                liveNumber?.let { number ->
-                    Text(
-                        number,
-                        color = if (todayHit != null) Danger else Ok,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 22.sp,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(
-                                if (todayHit != null) Danger.copy(alpha = 0.22f) else Ok.copy(alpha = 0.2f)
-                            )
-                            .padding(horizontal = 14.dp, vertical = 8.dp)
-                    )
-                }
             }
 
             // flashlight-v3
