@@ -46,6 +46,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
+import kotlin.coroutines.resume
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 @Composable
 fun CameraScreen(
@@ -85,6 +87,8 @@ fun CameraScreen(
     val imageCapture = remember { ImageCapture.Builder().build() }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     val cameraHolder = remember { mutableStateOf<Camera?>(null) }
+    val previewHolder = remember { mutableStateOf<PreviewView?>(null) }
+    val providerHolder = remember { mutableStateOf<ProcessCameraProvider?>(null) }
     var torchOn by remember { mutableStateOf(false) }
     val uiState by viewModel.uiState.collectAsState()
     val liveNumber by viewModel.liveNumber.collectAsState()
@@ -101,6 +105,41 @@ fun CameraScreen(
             return@LaunchedEffect
         }
         bound.cameraControl.enableTorch(torchOn)
+    }
+
+    val cameraPaused = uiState is CameraUiState.Result || uiState is CameraUiState.Recognizing
+    LaunchedEffect(hasCameraPermission, cameraPaused, previewHolder.value) {
+        if (!hasCameraPermission) return@LaunchedEffect
+        val previewView = previewHolder.value ?: return@LaunchedEffect
+        val provider = providerHolder.value ?: awaitCameraProvider(context).also {
+            providerHolder.value = it
+        }
+        if (cameraPaused) {
+            runCatching { cameraHolder.value?.cameraControl?.enableTorch(false) }
+            provider.unbindAll()
+            cameraHolder.value = null
+            return@LaunchedEffect
+        }
+        val preview = Preview.Builder().build()
+        preview.setSurfaceProvider(previewView.surfaceProvider)
+        val analysis = ImageAnalysis.Builder()
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .build()
+        analysis.setAnalyzer(cameraExecutor) { imageProxy ->
+            viewModel.onFrame(imageProxy)
+        }
+        try {
+            provider.unbindAll()
+            cameraHolder.value = provider.bindToLifecycle(
+                lifecycleOwner,
+                CameraSelector.DEFAULT_BACK_CAMERA,
+                preview,
+                imageCapture,
+                analysis
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     fun takeShot() {
@@ -157,33 +196,7 @@ fun CameraScreen(
             if (hasCameraPermission) {
                 AndroidView(
                     factory = { ctx ->
-                        PreviewView(ctx).also { pv ->
-                            val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-                            cameraProviderFuture.addListener({
-                                val cameraProvider = cameraProviderFuture.get()
-                                val preview = Preview.Builder().build()
-                                preview.setSurfaceProvider(pv.surfaceProvider)
-                                val analysis = ImageAnalysis.Builder()
-                                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                                    .build()
-                                analysis.setAnalyzer(cameraExecutor) { imageProxy ->
-                                    viewModel.onFrame(imageProxy)
-                                }
-                                try {
-                                    cameraProvider.unbindAll()
-                                    val bound = cameraProvider.bindToLifecycle(
-                                        lifecycleOwner,
-                                        CameraSelector.DEFAULT_BACK_CAMERA,
-                                        preview,
-                                        imageCapture,
-                                        analysis
-                                    )
-                                    cameraHolder.value = bound
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                }
-                            }, ContextCompat.getMainExecutor(ctx))
-                        }
+                        PreviewView(ctx).also { previewHolder.value = it }
                     },
                     modifier = Modifier.fillMaxSize()
                 )
@@ -365,7 +378,9 @@ fun CameraScreen(
 
     DisposableEffect(Unit) {
         onDispose {
-            cameraHolder.value?.cameraControl?.enableTorch(false)
+            runCatching { cameraHolder.value?.cameraControl?.enableTorch(false) }
+            providerHolder.value?.unbindAll()
+            cameraHolder.value = null
             cameraExecutor.shutdown()
         }
     }
@@ -505,6 +520,14 @@ private fun ResultDialog(
         }
     )
 }
+
+private suspend fun awaitCameraProvider(context: android.content.Context): ProcessCameraProvider =
+    suspendCancellableCoroutine { cont ->
+        val future = ProcessCameraProvider.getInstance(context)
+        future.addListener({
+            if (cont.isActive) cont.resume(future.get())
+        }, ContextCompat.getMainExecutor(context))
+    }
 
 private val FlashlightOnIcon = flashlightVector(on = true)
 private val FlashlightOffIcon = flashlightVector(on = false)
