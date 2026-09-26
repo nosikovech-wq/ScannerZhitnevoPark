@@ -477,7 +477,7 @@ private fun ResultDialog(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
                 .clip(RoundedCornerShape(28.dp))
-                .background(com.example.russianplatescanner.ui.theme.Surface)
+                .background(Surface)
                 .padding(20.dp)
         ) {
             Text("Сохранить запись", color = Fg, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
@@ -517,7 +517,9 @@ private fun ResultDialog(
                         .height(48.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Danger, contentColor = Fg)
                 ) {
-                    Text("НЕСОГЛ.", color = Fg, fontWeight = FontWeight.Bold)
+                    @Suppress("SpellCheckingInspection")
+                    val unauthorizedLabel = "НЕСОГЛ."
+                    Text(unauthorizedLabel, color = Fg, fontWeight = FontWeight.Bold)
                 }
             }
             Spacer(Modifier.height(12.dp))
