@@ -233,7 +233,7 @@ fun PlateItem(plate: PlateEntity, onClick: () -> Unit) {
             if (plate.unauthorizedExit) {
                 Text(
                     text = "НЕСОГЛ.",
-                    color = Ok,
+                    color = Danger,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
