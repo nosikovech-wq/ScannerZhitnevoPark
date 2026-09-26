@@ -162,6 +162,14 @@ fun PlateItem(plate: PlateEntity, onClick: () -> Unit) {
                 color = Subtle,
                 fontSize = 12.sp
             )
+            if (plate.unauthorizedExit) {
+                Text(
+                    text = "НЕСОГЛ.",
+                    color = Ok,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
             plate.note?.let {
                 Text(text = it, color = Muted, fontSize = 14.sp, maxLines = 1)
             }

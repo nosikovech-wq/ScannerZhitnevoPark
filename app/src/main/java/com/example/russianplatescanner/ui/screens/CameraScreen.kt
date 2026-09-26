@@ -332,6 +332,7 @@ fun CameraScreen(
         is CameraUiState.Result -> {
             ResultDialog(
                 number = state.number,
+                recentHit = { viewModel.recentHit(it) },
                 onConfirm = { finalNumber, note ->
                     viewModel.save(finalNumber, note, state.bitmap) { result ->
                         when (result) {
@@ -344,6 +345,21 @@ fun CameraScreen(
                             is SaveResult.Failed -> {
                                 Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
                             }
+                        }
+                    }
+                },
+                onUnauthorized = { finalNumber, note ->
+                    viewModel.save(finalNumber, note, state.bitmap, unauthorized = true) { result ->
+                        when (result) {
+                            is SaveResult.Saved -> {
+                                blocked = null
+                                Toast.makeText(context, "Несогласованный выезд: $finalNumber", Toast.LENGTH_SHORT).show()
+                                onSaved()
+                            }
+                            is SaveResult.Failed -> {
+                                Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                            }
+                            is SaveResult.Duplicate -> blocked = result
                         }
                     }
                 },
@@ -423,12 +439,15 @@ private fun formatWhen(timestamp: Long): String {
 @Composable
 private fun ResultDialog(
     number: String?,
+    recentHit: (String) -> TodayHit?,
     onConfirm: (String, String?) -> Unit,
+    onUnauthorized: (String, String?) -> Unit,
     onRetry: () -> Unit,
     onDismiss: () -> Unit
 ) {
     var editableNumber by remember { mutableStateOf(number ?: "") }
     var note by remember { mutableStateOf("") }
+    val duplicate = recentHit(editableNumber)
     val fieldColors = OutlinedTextFieldDefaults.colors(
         focusedTextColor = Fg,
         unfocusedTextColor = Fg,
@@ -480,6 +499,22 @@ private fun ResultDialog(
                         .fillMaxWidth()
                         .height(64.dp)
                 )
+                if (duplicate != null) {
+                    Spacer(Modifier.height(12.dp))
+                    Button(
+                        onClick = {
+                            if (editableNumber.isNotBlank()) {
+                                onUnauthorized(editableNumber.trim(), note.ifBlank { null })
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Ok, contentColor = AccentFg)
+                    ) {
+                        Text("НЕСОГЛ.", color = AccentFg, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         },
         confirmButton = {

@@ -145,7 +145,15 @@ class CameraViewModel(
         }
     }
 
-    fun save(number: String, note: String?, bitmap: Bitmap, onResult: (SaveResult) -> Unit) {
+    fun recentHit(number: String): TodayHit? = hitFor(number)
+
+    fun save(
+        number: String,
+        note: String?,
+        bitmap: Bitmap,
+        unauthorized: Boolean = false,
+        onResult: (SaveResult) -> Unit
+    ) {
         if (saving) return
         saving = true
         viewModelScope.launch {
@@ -167,7 +175,7 @@ class CameraViewModel(
                             availableAt = it.timestamp + REPEAT_LOCK_MS
                         )
                     }
-                if (existing != null) {
+                if (existing != null && !unauthorized) {
                     onResult(SaveResult.Duplicate(existing))
                     return@launch
                 }
@@ -176,7 +184,8 @@ class CameraViewModel(
                     PlateEntity(
                         number = normalized,
                         photoPath = path,
-                        note = note?.trim()?.ifBlank { null }
+                        note = note?.trim()?.ifBlank { null },
+                        unauthorizedExit = unauthorized && existing != null
                     )
                 )
                 onResult(SaveResult.Saved)

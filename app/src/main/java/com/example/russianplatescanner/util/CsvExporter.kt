@@ -25,7 +25,7 @@ object CsvExporter {
                 fmt.format(Date(plate.timestamp)),
                 plate.number,
                 plate.note ?: "",
-                "",
+                if (plate.unauthorizedExit) "ДА" else "",
                 plate.photoPath
             )
         }
