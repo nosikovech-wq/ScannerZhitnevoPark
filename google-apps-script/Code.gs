@@ -1,5 +1,10 @@
 var HEADERS = ["ДАТА", "НОМЕР", "ЗАМЕТКА", "НЕСОГЛАСОВАННЫЙ ВЫЕЗД", "ПУТЬ К ФОТО", "ID"];
 
+function authorizeDrive() {
+  var folder = photosFolder_();
+  Logger.log(folder.getUrl());
+}
+
 function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
