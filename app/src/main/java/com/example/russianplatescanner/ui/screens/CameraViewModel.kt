@@ -14,7 +14,7 @@ import com.example.russianplatescanner.util.PlateRecognizer
 import com.example.russianplatescanner.util.startOfLocalDay
 import com.example.russianplatescanner.util.startOfLocalMonth
 import com.example.russianplatescanner.util.REPEAT_LOCK_MS
-import com.example.russianplatescanner.util.normalizePlate
+import com.example.russianplatescanner.util.correctPlate
 import com.example.russianplatescanner.util.repeatWindowStart
 import com.example.russianplatescanner.util.toUprightBitmap
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -94,11 +94,11 @@ class CameraViewModel(
 
     private fun hitFor(number: String?): TodayHit? {
         if (number.isNullOrBlank()) return null
-        val normalized = normalizePlate(number)
+        val normalized = correctPlate(number)
         if (normalized.isBlank()) return null
         val since = repeatWindowStart()
         val hit = cachedPlates
-            .filter { it.timestamp >= since && normalizePlate(it.number) == normalized }
+            .filter { it.timestamp >= since && correctPlate(it.number) == normalized }
             .maxByOrNull { it.timestamp }
             ?: return null
         return TodayHit(
@@ -145,7 +145,7 @@ class CameraViewModel(
     }
 
     private fun considerLive(number: String?) {
-        val normalized = number?.let { normalizePlate(it) }?.takeIf { it.isNotBlank() } ?: return
+        val normalized = number?.let { correctPlate(it) }?.takeIf { it.isNotBlank() } ?: return
         val now = System.currentTimeMillis()
         if (normalized == candidate && now - candidateAt <= 1100L) {
             candidateHits += 1
@@ -235,14 +235,14 @@ class CameraViewModel(
         saving = true
         viewModelScope.launch {
             try {
-                val normalized = normalizePlate(number)
+                val normalized = correctPlate(number)
                 if (normalized.isBlank()) {
                     onResult(SaveResult.Failed("Пустой номер"))
                     return@launch
                 }
                 val since = repeatWindowStart()
                 val existing = plateDao.recordedSince(since)
-                    .filter { normalizePlate(it.number) == normalized }
+                    .filter { correctPlate(it.number) == normalized }
                     .maxByOrNull { it.timestamp }
                     ?.let {
                         TodayHit(
