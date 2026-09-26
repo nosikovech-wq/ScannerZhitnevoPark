@@ -46,8 +46,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
-import kotlin.coroutines.resume
-import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun CameraScreen(
@@ -522,11 +522,8 @@ private fun ResultDialog(
 }
 
 private suspend fun awaitCameraProvider(context: android.content.Context): ProcessCameraProvider =
-    suspendCancellableCoroutine { cont ->
-        val future = ProcessCameraProvider.getInstance(context)
-        future.addListener({
-            if (cont.isActive) cont.resume(future.get())
-        }, ContextCompat.getMainExecutor(context))
+    withContext(Dispatchers.IO) {
+        ProcessCameraProvider.getInstance(context).get()
     }
 
 private val FlashlightOnIcon = flashlightVector(on = true)
