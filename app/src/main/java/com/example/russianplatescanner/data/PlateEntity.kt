@@ -11,5 +11,6 @@ data class PlateEntity(
     val photoPath: String,
     val timestamp: Long = System.currentTimeMillis(),
     val note: String? = null,
-    val unauthorizedExit: Boolean = false
+    val unauthorizedExit: Boolean = false,
+    val uploaded: Boolean = false
 )

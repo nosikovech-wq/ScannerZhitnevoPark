@@ -60,6 +60,7 @@ fun ListScreen(
     )
 
     val plates by viewModel.plates.collectAsState(initial = emptyList())
+    val pendingUpload by viewModel.pendingUpload.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var dayStart by remember { mutableStateOf<Long?>(null) }
     var showDatePicker by remember { mutableStateOf(false) }
@@ -84,10 +85,22 @@ fun ListScreen(
         cancelUpload = false
         upload = SheetSync.Tick("Проверка строк в таблице…", 0, 0, 0, 0)
         scope.launch {
-            SheetSync.upload(url, plates, { cancelUpload }) { tick ->
-                upload = tick
-            }
+            SheetSync.upload(
+                url,
+                plates,
+                { cancelUpload },
+                onProgress = { tick -> upload = tick },
+                onAccepted = { ids -> viewModel.markUploaded(ids) }
+            )
         }
+    }
+
+    LaunchedEffect(Unit) {
+        val url = SheetSync.url(context)
+        if (!url.startsWith("https://")) return@LaunchedEffect
+        val started = viewModel.currentEpoch()
+        val ids = runCatching { SheetSync.knownIds(url) }.getOrNull() ?: return@LaunchedEffect
+        viewModel.syncFromServer(ids, started)
     }
 
     Column(
@@ -96,6 +109,15 @@ fun ListScreen(
             .background(Bg)
             .then(if (embedded) Modifier else Modifier.statusBarsPadding())
     ) {
+        if (pendingUpload > 0) {
+            Text(
+                "Не выгружено: $pendingUpload",
+                color = Fg,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        }
         OutlinedTextField(
             value = searchQuery,
             onValueChange = {
@@ -310,6 +332,14 @@ fun PlateItem(plate: PlateEntity, onClick: () -> Unit) {
                     color = Danger,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
+                )
+            }
+            if (!plate.uploaded) {
+                Text(
+                    text = "Не выгружено",
+                    color = Fg,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
             plate.note?.let {

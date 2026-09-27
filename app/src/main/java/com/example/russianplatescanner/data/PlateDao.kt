@@ -32,4 +32,10 @@ interface PlateDao {
 
     @Query("DELETE FROM plates")
     suspend fun deleteAll()
+
+    @Query("UPDATE plates SET uploaded = 1 WHERE id IN (:ids)")
+    suspend fun markUploaded(ids: List<Long>)
+
+    @Query("UPDATE plates SET uploaded = 0 WHERE id IN (:ids)")
+    suspend fun markNotUploaded(ids: List<Long>)
 }

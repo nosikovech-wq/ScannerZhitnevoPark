@@ -50,7 +50,8 @@ object SheetSync {
         url: String,
         plates: List<PlateEntity>,
         isCancelled: () -> Boolean,
-        onProgress: (Tick) -> Unit
+        onProgress: (Tick) -> Unit,
+        onAccepted: suspend (List<Long>) -> Unit = {}
     ): Tick = withContext(Dispatchers.IO) {
         suspend fun report(tick: Tick) {
             withContext(Dispatchers.Main) { onProgress(tick) }
@@ -58,6 +59,7 @@ object SheetSync {
         try {
             report(Tick("Проверка строк в таблице…", 0, 0, 0, 0))
             val remote = fetchStatus(url)
+            onAccepted(remote.keys.mapNotNull { it.toLongOrNull() })
             val pending = plates.filter { plate ->
                 val known = remote[plate.id.toString()]
                 known == null || !known
@@ -94,6 +96,7 @@ object SheetSync {
                         return@withContext cancelled
                     }
                     val result = append(url, chunk, fmt)
+                    onAccepted(chunk.map { it.id })
                     sent += chunk.size
                     inserted += result.first
                     skipped += result.second
@@ -124,6 +127,10 @@ object SheetSync {
             report(failed)
             failed
         }
+    }
+
+    suspend fun knownIds(url: String): Set<Long> = withContext(Dispatchers.IO) {
+        fetchStatus(url).keys.mapNotNull { it.toLongOrNull() }.toSet()
     }
 
     suspend fun clear(url: String) = withContext(Dispatchers.IO) {
