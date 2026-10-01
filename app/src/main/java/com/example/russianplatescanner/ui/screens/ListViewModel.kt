@@ -3,8 +3,11 @@ package com.example.russianplatescanner.ui.screens
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import android.content.Context
 import com.example.russianplatescanner.data.PlateDao
 import com.example.russianplatescanner.data.PlateEntity
+import com.example.russianplatescanner.util.PhotoStorage
+import com.example.russianplatescanner.util.SheetSync
 import com.example.russianplatescanner.util.normalizePlate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,7 +17,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-class ListViewModel(private val plateDao: PlateDao) : ViewModel() {
+class ListViewModel(
+    private val plateDao: PlateDao,
+    private val appContext: Context
+) : ViewModel() {
 
     private val _plates = MutableStateFlow<List<PlateEntity>>(emptyList())
     val plates: StateFlow<List<PlateEntity>> = _plates.asStateFlow()
@@ -61,6 +67,18 @@ class ListViewModel(private val plateDao: PlateDao) : ViewModel() {
         }
     }
 
+    fun delete(plate: PlateEntity, onDone: () -> Unit) {
+        viewModelScope.launch {
+            PhotoStorage.deletePhoto(plate.photoPath)
+            plateDao.delete(plate)
+            val url = SheetSync.url(appContext)
+            if (url.startsWith("https://")) {
+                runCatching { SheetSync.remove(url, plate) }
+            }
+            onDone()
+        }
+    }
+
     fun search(query: String) {
         currentQuery = query.trim()
         publish()
@@ -88,11 +106,14 @@ class ListViewModel(private val plateDao: PlateDao) : ViewModel() {
     }
 }
 
-class ListViewModelFactory(private val plateDao: PlateDao) : ViewModelProvider.Factory {
+class ListViewModelFactory(
+    private val plateDao: PlateDao,
+    private val context: Context
+) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(ListViewModel::class.java)) {
-            return ListViewModel(plateDao) as T
+            return ListViewModel(plateDao, context.applicationContext) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

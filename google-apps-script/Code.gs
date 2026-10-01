@@ -26,7 +26,12 @@ function doPost(e) {
       return json({ ok: true });
     }
     if (body.action === "remove") {
-      var removed = removeRow_(sheet, String(body.id || ""));
+      var removed = removeRow_(
+        sheet,
+        String(body.id || ""),
+        String(body.number || ""),
+        String(body.date || "")
+      );
       return json({ ok: true, removed: removed });
     }
     return json({ ok: false, error: "Неизвестное действие" });
@@ -169,14 +174,39 @@ function appendRows_(sheet, rows) {
   return { inserted: toAdd.length + updated, skipped: skipped };
 }
 
-function removeRow_(sheet, id) {
-  if (!id) return false;
-  var index = rowIndexById_(sheet);
-  var row = index[id];
-  if (typeof row !== "number") return false;
+function removeRow_(sheet, id, number, date) {
+  var last = sheet.getLastRow();
+  if (last < 2) return false;
+  var row = 0;
+  if (id) {
+    var index = rowIndexById_(sheet);
+    if (typeof index[id] === "number") row = index[id];
+  }
+  if (!row && number) {
+    var values = sheet.getRange(2, 1, last - 1, 2).getValues();
+    for (var i = values.length - 1; i >= 0; i--) {
+      var cellDate = formatDateCell_(values[i][0]);
+      var cellNumber = String(values[i][1] || "");
+      if (cellNumber !== number) continue;
+      if (!date || cellDate === date || cellDate.indexOf(date) === 0 || date.indexOf(cellDate) === 0) {
+        row = i + 2;
+        break;
+      }
+    }
+  }
+  if (!row) return false;
   trashDriveFile_(sheet.getRange(row, 5).getValue());
   sheet.deleteRow(row);
   return true;
+}
+
+function formatDateCell_(value) {
+  if (Object.prototype.toString.call(value) === "[object Date]" && !isNaN(value.getTime())) {
+    function pad(n) { return ("0" + n).slice(-2); }
+    return pad(value.getDate()) + "." + pad(value.getMonth() + 1) + "." + value.getFullYear() +
+      " " + pad(value.getHours()) + ":" + pad(value.getMinutes()) + ":" + pad(value.getSeconds());
+  }
+  return String(value || "");
 }
 
 function rowIndexById_(sheet) {

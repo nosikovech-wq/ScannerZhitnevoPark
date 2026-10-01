@@ -200,8 +200,18 @@ object SheetSync {
         post(url, JSONObject().put("action", "finish").toString())
     }
 
-    suspend fun remove(url: String, id: String) = withContext(Dispatchers.IO) {
-        post(url, JSONObject().put("action", "remove").put("id", id).toString())
+    suspend fun remove(url: String, plate: PlateEntity): Boolean = withContext(Dispatchers.IO) {
+        val fmt = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault())
+        val response = post(
+            url,
+            JSONObject()
+                .put("action", "remove")
+                .put("id", plate.recordKey())
+                .put("number", plate.number)
+                .put("date", fmt.format(Date(plate.timestamp)))
+                .toString()
+        )
+        response.optBoolean("removed")
     }
 
     private fun post(url: String, json: String): JSONObject {

@@ -9,14 +9,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -56,7 +59,7 @@ fun ListScreen(
     val context = LocalContext.current
     val app = context.applicationContext as PlateApp
     val viewModel: ListViewModel = viewModel(
-        factory = ListViewModelFactory(app.plateDao)
+        factory = ListViewModelFactory(app.plateDao, context.applicationContext)
     )
 
     val plates by viewModel.plates.collectAsState(initial = emptyList())
@@ -66,6 +69,8 @@ fun ListScreen(
     var showDatePicker by remember { mutableStateOf(false) }
     var upload by remember { mutableStateOf<SheetSync.Tick?>(null) }
     var cancelUpload by remember { mutableStateOf(false) }
+    var plateToDelete by remember { mutableStateOf<PlateEntity?>(null) }
+    var deleting by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     fun startUpload() {
@@ -226,7 +231,11 @@ fun ListScreen(
                 contentPadding = PaddingValues(bottom = 24.dp)
             ) {
                 items(plates, key = { it.id }) { plate ->
-                    PlateItem(plate = plate, onClick = { onItemClick(plate.id) })
+                    PlateItem(
+                        plate = plate,
+                        onClick = { onItemClick(plate.id) },
+                        onDelete = { plateToDelete = plate }
+                    )
                 }
             }
         }
@@ -272,6 +281,38 @@ fun ListScreen(
             DatePicker(state = pickerState)
         }
     }
+
+    plateToDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { if (!deleting) plateToDelete = null },
+            containerColor = Surface,
+            title = { Text("Удалить запись?", color = Fg) },
+            text = {
+                Text(
+                    "Номер ${formatPlateUi(target.number)} будет удалён с телефона, из онлайн-таблицы и с Диска.",
+                    color = Muted
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !deleting,
+                    onClick = {
+                        deleting = true
+                        viewModel.delete(target) {
+                            deleting = false
+                            plateToDelete = null
+                        }
+                    }
+                ) { Text(if (deleting) "..." else "Удалить", color = Danger) }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !deleting,
+                    onClick = { plateToDelete = null }
+                ) { Text("Отмена", color = Muted) }
+            }
+        )
+    }
 }
 
 @Composable
@@ -291,7 +332,7 @@ private fun RowScope.DayChip(label: String, selected: Boolean, onClick: () -> Un
 }
 
 @Composable
-fun PlateItem(plate: PlateEntity, onClick: () -> Unit) {
+fun PlateItem(plate: PlateEntity, onClick: () -> Unit, onDelete: () -> Unit) {
     val dateFormat = remember { SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()) }
 
     Row(
@@ -345,6 +386,9 @@ fun PlateItem(plate: PlateEntity, onClick: () -> Unit) {
             plate.note?.let {
                 Text(text = it, color = Muted, fontSize = 14.sp, maxLines = 1)
             }
+        }
+        IconButton(onClick = onDelete) {
+            Icon(Icons.Outlined.Delete, contentDescription = "Удалить", tint = Danger)
         }
     }
 }
