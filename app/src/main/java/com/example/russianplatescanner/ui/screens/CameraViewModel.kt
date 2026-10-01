@@ -14,6 +14,7 @@ import com.example.russianplatescanner.util.PlateRecognizer
 import com.example.russianplatescanner.util.startOfLocalDay
 import com.example.russianplatescanner.util.startOfLocalMonth
 import com.example.russianplatescanner.util.REPEAT_LOCK_MS
+import com.example.russianplatescanner.util.SheetSync
 import com.example.russianplatescanner.util.correctPlate
 import com.example.russianplatescanner.util.repeatWindowStart
 import com.example.russianplatescanner.util.toGuideBitmap
@@ -57,6 +58,7 @@ class CameraViewModel(
     private var lastAnalyzeAt = 0L
     private var saving = false
     private var cachedPlates: List<PlateEntity> = emptyList()
+    private var remotePlates: List<SheetSync.RemoteRow> = emptyList()
     @Volatile private var previewWidth = 0
     @Volatile private var previewHeight = 0
     private var candidate: String? = null
@@ -82,14 +84,36 @@ class CameraViewModel(
             plateDao.getAll().collect { list ->
                 cachedPlates = list
                 _todayHit.value = hitFor(_liveNumber.value)
-                val dayStart = startOfLocalDay()
-                val monthStart = startOfLocalMonth()
-                _counts.value = PeriodCounts(
-                    day = list.count { it.timestamp >= dayStart },
-                    month = list.count { it.timestamp >= monthStart }
-                )
+                publishCounts()
             }
         }
+        refreshRemote()
+    }
+
+    fun refreshRemote() {
+        viewModelScope.launch {
+            runCatching { pullRemote() }
+        }
+    }
+
+    private suspend fun pullRemote() {
+        val url = SheetSync.url(appContext)
+        if (!url.startsWith("https://")) return
+        remotePlates = SheetSync.index(url)
+        _todayHit.value = hitFor(_liveNumber.value)
+        publishCounts()
+    }
+
+    private fun publishCounts() {
+        val dayStart = startOfLocalDay()
+        val monthStart = startOfLocalMonth()
+        val localKeys = cachedPlates.map { it.recordKey() }.toSet()
+        fun total(since: Long): Int {
+            val local = cachedPlates.count { it.timestamp >= since }
+            val remote = remotePlates.count { it.timestamp >= since && it.id !in localKeys }
+            return local + remote
+        }
+        _counts.value = PeriodCounts(day = total(dayStart), month = total(monthStart))
     }
 
     private fun hitFor(number: String?): TodayHit? {
@@ -97,15 +121,20 @@ class CameraViewModel(
         val normalized = correctPlate(number)
         if (normalized.isBlank()) return null
         val since = repeatWindowStart()
-        val hit = cachedPlates
+        val local = cachedPlates
             .filter { it.timestamp >= since && correctPlate(it.number) == normalized }
             .maxByOrNull { it.timestamp }
-            ?: return null
+            ?.let { it.timestamp to it.note }
+        val remote = remotePlates
+            .filter { it.timestamp >= since && it.number.isNotBlank() && correctPlate(it.number) == normalized }
+            .maxByOrNull { it.timestamp }
+            ?.let { it.timestamp to it.note }
+        val hit = listOfNotNull(local, remote).maxByOrNull { it.first } ?: return null
         return TodayHit(
-            number = hit.number,
-            previousAt = hit.timestamp,
-            note = hit.note,
-            availableAt = hit.timestamp + REPEAT_LOCK_MS
+            number = normalized,
+            previousAt = hit.first,
+            note = hit.second,
+            availableAt = hit.first + REPEAT_LOCK_MS
         )
     }
 
@@ -237,18 +266,8 @@ class CameraViewModel(
                     onResult(SaveResult.Failed("Пустой номер"))
                     return@launch
                 }
-                val since = repeatWindowStart()
-                val existing = plateDao.recordedSince(since)
-                    .filter { correctPlate(it.number) == normalized }
-                    .maxByOrNull { it.timestamp }
-                    ?.let {
-                        TodayHit(
-                            number = it.number,
-                            previousAt = it.timestamp,
-                            note = it.note,
-                            availableAt = it.timestamp + REPEAT_LOCK_MS
-                        )
-                    }
+                runCatching { pullRemote() }
+                val existing = recentHit(normalized)
                 if (existing != null && !unauthorized) {
                     onResult(SaveResult.Duplicate(existing))
                     return@launch

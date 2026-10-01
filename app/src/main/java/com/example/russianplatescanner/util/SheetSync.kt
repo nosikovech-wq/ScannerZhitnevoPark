@@ -51,7 +51,7 @@ object SheetSync {
         plates: List<PlateEntity>,
         isCancelled: () -> Boolean,
         onProgress: (Tick) -> Unit,
-        onAccepted: suspend (List<Long>) -> Unit = {}
+        onAccepted: suspend (List<String>) -> Unit = {}
     ): Tick = withContext(Dispatchers.IO) {
         suspend fun report(tick: Tick) {
             withContext(Dispatchers.Main) { onProgress(tick) }
@@ -59,9 +59,9 @@ object SheetSync {
         try {
             report(Tick("Проверка строк в таблице…", 0, 0, 0, 0))
             val remote = fetchStatus(url)
-            onAccepted(remote.keys.mapNotNull { it.toLongOrNull() })
+            onAccepted(remote.keys.toList())
             val pending = plates.filter { plate ->
-                val known = remote[plate.id.toString()]
+                val known = remote[plate.recordKey()]
                 known == null || !known
             }
             val already = plates.size - pending.size
@@ -96,7 +96,7 @@ object SheetSync {
                         return@withContext cancelled
                     }
                     val result = append(url, chunk, fmt)
-                    onAccepted(chunk.map { it.id })
+                    onAccepted(chunk.map { it.recordKey() })
                     sent += chunk.size
                     inserted += result.first
                     skipped += result.second
@@ -129,8 +129,20 @@ object SheetSync {
         }
     }
 
-    suspend fun knownIds(url: String): Set<Long> = withContext(Dispatchers.IO) {
-        fetchStatus(url).keys.mapNotNull { it.toLongOrNull() }.toSet()
+    data class RemoteRow(
+        val id: String,
+        val number: String,
+        val timestamp: Long,
+        val note: String?,
+        val hasPhoto: Boolean
+    )
+
+    suspend fun knownIds(url: String): Set<String> = withContext(Dispatchers.IO) {
+        fetchStatus(url).keys
+    }
+
+    suspend fun index(url: String): List<RemoteRow> = withContext(Dispatchers.IO) {
+        fetchRows(url)
     }
 
     suspend fun clear(url: String) = withContext(Dispatchers.IO) {
@@ -138,13 +150,26 @@ object SheetSync {
     }
 
     private fun fetchStatus(url: String): Map<String, Boolean> {
+        return fetchRows(url).associate { it.id to it.hasPhoto }
+    }
+
+    private fun fetchRows(url: String): List<RemoteRow> {
         val response = post(url, JSONObject().put("action", "status").toString())
         val rows = response.optJSONArray("rows") ?: JSONArray()
-        return buildMap {
+        return buildList {
             for (i in 0 until rows.length()) {
                 val row = rows.optJSONObject(i) ?: continue
                 val id = row.optString("id")
-                if (id.isNotBlank()) put(id, row.optBoolean("hasPhoto"))
+                if (id.isBlank()) continue
+                add(
+                    RemoteRow(
+                        id = id,
+                        number = row.optString("number"),
+                        timestamp = row.optLong("timestamp"),
+                        note = row.optString("note").ifBlank { null },
+                        hasPhoto = row.optBoolean("hasPhoto")
+                    )
+                )
             }
         }
     }
@@ -159,7 +184,7 @@ object SheetSync {
             val photo = PhotoStorage.jpegBytesForUpload(plate.photoPath)
             rows.put(
                 JSONObject()
-                    .put("id", plate.id.toString())
+                    .put("id", plate.recordKey())
                     .put("date", fmt.format(Date(plate.timestamp)))
                     .put("number", plate.number)
                     .put("note", plate.note ?: "")
@@ -175,8 +200,8 @@ object SheetSync {
         post(url, JSONObject().put("action", "finish").toString())
     }
 
-    suspend fun remove(url: String, id: Long) = withContext(Dispatchers.IO) {
-        post(url, JSONObject().put("action", "remove").put("id", id.toString()).toString())
+    suspend fun remove(url: String, id: String) = withContext(Dispatchers.IO) {
+        post(url, JSONObject().put("action", "remove").put("id", id).toString())
     }
 
     private fun post(url: String, json: String): JSONObject {

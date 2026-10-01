@@ -33,7 +33,7 @@ class DetailViewModel(
             plateDao.delete(plate)
             val url = SheetSync.url(appContext)
             if (url.startsWith("https://")) {
-                runCatching { SheetSync.remove(url, plate.id) }
+                runCatching { SheetSync.remove(url, plate.recordKey()) }
             }
             onComplete()
         }

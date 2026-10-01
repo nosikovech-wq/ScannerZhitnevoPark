@@ -65,13 +65,22 @@ function clearSheet_(sheet) {
 function statusRows_(sheet) {
   var last = sheet.getLastRow();
   if (last < 2) return [];
-  var values = sheet.getRange(2, 5, last - 1, 2).getValues();
+  var values = sheet.getRange(2, 1, last - 1, 6).getValues();
   var rows = [];
   for (var i = 0; i < values.length; i++) {
-    var photo = String(values[i][0] || "");
-    var id = String(values[i][1] || "");
+    var date = values[i][0];
+    var number = String(values[i][1] || "");
+    var note = String(values[i][2] || "");
+    var photo = String(values[i][4] || "");
+    var id = String(values[i][5] || "");
     if (!id) continue;
-    rows.push({ id: id, hasPhoto: photo.indexOf("https://drive.google.com/") === 0 });
+    rows.push({
+      id: id,
+      number: number,
+      note: note,
+      timestamp: dateValue_(date),
+      hasPhoto: photo.indexOf("https://drive.google.com/") === 0
+    });
   }
   return rows;
 }

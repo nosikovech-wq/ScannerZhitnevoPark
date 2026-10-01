@@ -30,22 +30,22 @@ class ListViewModel(private val plateDao: PlateDao) : ViewModel() {
 
     fun currentEpoch(): Int = epoch
 
-    fun markUploaded(ids: List<Long>) {
-        if (ids.isEmpty()) return
+    fun markUploaded(uids: List<String>) {
+        if (uids.isEmpty()) return
         viewModelScope.launch {
             gate.withLock {
                 epoch++
-                ids.chunked(400).forEach { plateDao.markUploaded(it) }
+                uids.chunked(400).forEach { plateDao.markUploaded(it) }
             }
         }
     }
 
-    fun syncFromServer(ids: Set<Long>, startedEpoch: Int) {
+    fun syncFromServer(ids: Set<String>, startedEpoch: Int) {
         viewModelScope.launch {
             gate.withLock {
                 if (startedEpoch != epoch) return@withLock
-                val uploaded = allPlates.map { it.id }.filter { it in ids }
-                val missing = allPlates.map { it.id }.filter { it !in ids }
+                val uploaded = allPlates.map { it.recordKey() }.filter { it in ids }
+                val missing = allPlates.map { it.recordKey() }.filter { it !in ids }
                 uploaded.chunked(400).forEach { plateDao.markUploaded(it) }
                 missing.chunked(400).forEach { plateDao.markNotUploaded(it) }
             }
