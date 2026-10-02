@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
@@ -23,6 +24,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
@@ -70,6 +73,8 @@ fun ListScreen(
     var upload by remember { mutableStateOf<SheetSync.Tick?>(null) }
     var cancelUpload by remember { mutableStateOf(false) }
     var plateToDelete by remember { mutableStateOf<PlateEntity?>(null) }
+    var plateToEdit by remember { mutableStateOf<PlateEntity?>(null) }
+    var editMessage by remember { mutableStateOf<String?>(null) }
     var deleting by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -120,6 +125,14 @@ fun ListScreen(
                 color = Fg,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 14.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        }
+        editMessage?.let {
+            Text(
+                it,
+                color = if (it.startsWith("Сохранено и")) Ok else Fg,
+                fontSize = 13.sp,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
         }
@@ -234,6 +247,7 @@ fun ListScreen(
                     PlateItem(
                         plate = plate,
                         onClick = { onItemClick(plate.id) },
+                        onEdit = { plateToEdit = plate },
                         onDelete = { plateToDelete = plate }
                     )
                 }
@@ -313,6 +327,109 @@ fun ListScreen(
             }
         )
     }
+
+    plateToEdit?.let { target ->
+        EditPlateDialog(
+            plate = target,
+            onDismiss = { plateToEdit = null },
+            onSave = { number, note, unauthorized ->
+                viewModel.update(target, number, note, unauthorized) { message ->
+                    editMessage = message
+                    plateToEdit = null
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun EditPlateDialog(
+    plate: PlateEntity,
+    onDismiss: () -> Unit,
+    onSave: (String, String, Boolean) -> Unit
+) {
+    var number by remember(plate.id) { mutableStateOf(formatPlateUi(plate.number)) }
+    var note by remember(plate.id) { mutableStateOf(plate.note.orEmpty()) }
+    var unauthorized by remember(plate.id) { mutableStateOf(plate.unauthorizedExit) }
+    var saving by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = { if (!saving) onDismiss() },
+        containerColor = Surface,
+        title = { Text("Изменить запись", color = Fg) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = number,
+                    onValueChange = { number = it.uppercase() },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 20.sp,
+                        color = Fg
+                    ),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Fg,
+                        unfocusedTextColor = Fg,
+                        focusedBorderColor = Accent,
+                        unfocusedBorderColor = Border,
+                        cursorColor = Fg,
+                        focusedContainerColor = Surface2,
+                        unfocusedContainerColor = Surface2
+                    )
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Заметка") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Fg,
+                        unfocusedTextColor = Fg,
+                        focusedBorderColor = Accent,
+                        unfocusedBorderColor = Border,
+                        cursorColor = Fg,
+                        focusedContainerColor = Surface2,
+                        unfocusedContainerColor = Surface2
+                    )
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Несогласованный выезд",
+                        color = if (unauthorized) Danger else Muted,
+                        modifier = Modifier.weight(1f),
+                        fontSize = 14.sp
+                    )
+                    Switch(
+                        checked = unauthorized,
+                        onCheckedChange = { unauthorized = it },
+                        colors = SwitchDefaults.colors(
+                            checkedTrackColor = Danger,
+                            checkedThumbColor = Fg
+                        )
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !saving && number.isNotBlank(),
+                onClick = {
+                    saving = true
+                    onSave(number, note, unauthorized)
+                }
+            ) { Text("Сохранить", color = Ok) }
+        },
+        dismissButton = {
+            TextButton(enabled = !saving, onClick = onDismiss) { Text("Отмена", color = Muted) }
+        }
+    )
 }
 
 @Composable
@@ -332,7 +449,12 @@ private fun RowScope.DayChip(label: String, selected: Boolean, onClick: () -> Un
 }
 
 @Composable
-fun PlateItem(plate: PlateEntity, onClick: () -> Unit, onDelete: () -> Unit) {
+fun PlateItem(
+    plate: PlateEntity,
+    onClick: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
     val dateFormat = remember { SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()) }
 
     Row(
@@ -386,6 +508,9 @@ fun PlateItem(plate: PlateEntity, onClick: () -> Unit, onDelete: () -> Unit) {
             plate.note?.let {
                 Text(text = it, color = Muted, fontSize = 14.sp, maxLines = 1)
             }
+        }
+        IconButton(onClick = onEdit) {
+            Icon(Icons.Outlined.Edit, contentDescription = "Изменить", tint = Fg)
         }
         IconButton(onClick = onDelete) {
             Icon(Icons.Outlined.Delete, contentDescription = "Удалить", tint = Danger)

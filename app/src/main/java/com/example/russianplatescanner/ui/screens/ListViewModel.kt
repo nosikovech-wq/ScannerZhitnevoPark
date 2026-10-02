@@ -8,6 +8,7 @@ import com.example.russianplatescanner.data.PlateDao
 import com.example.russianplatescanner.data.PlateEntity
 import com.example.russianplatescanner.util.PhotoStorage
 import com.example.russianplatescanner.util.SheetSync
+import com.example.russianplatescanner.util.correctPlate
 import com.example.russianplatescanner.util.normalizePlate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -64,6 +65,35 @@ class ListViewModel(
                 allPlates = list
                 publish()
             }
+        }
+    }
+
+    fun update(
+        plate: PlateEntity,
+        number: String,
+        note: String,
+        unauthorized: Boolean,
+        onDone: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            val normalized = correctPlate(number)
+            if (normalized.isBlank()) {
+                onDone("Номер не распознан")
+                return@launch
+            }
+            val updated = plate.copy(
+                number = normalized,
+                note = note.trim().ifBlank { null },
+                unauthorizedExit = unauthorized
+            )
+            plateDao.update(updated)
+            val url = SheetSync.url(appContext)
+            if (!url.startsWith("https://") || !plate.uploaded) {
+                onDone("Сохранено на телефоне")
+                return@launch
+            }
+            val synced = runCatching { SheetSync.update(url, updated, plate.number) }.getOrDefault(false)
+            onDone(if (synced) "Сохранено и обновлено в таблице" else "Сохранено на телефоне, таблица не обновлена")
         }
     }
 

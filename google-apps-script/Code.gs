@@ -25,6 +25,10 @@ function doPost(e) {
       formatSheet_(sheet);
       return json({ ok: true });
     }
+    if (body.action === "update") {
+      var updated = updateRow_(sheet, body);
+      return json({ ok: true, updated: updated });
+    }
     if (body.action === "remove") {
       var removed = removeRow_(
         sheet,
@@ -174,29 +178,56 @@ function appendRows_(sheet, rows) {
   return { inserted: toAdd.length + updated, skipped: skipped };
 }
 
-function removeRow_(sheet, id, number, date) {
+function findRow_(sheet, id, number, date) {
   var last = sheet.getLastRow();
-  if (last < 2) return false;
-  var row = 0;
+  if (last < 2) return 0;
   if (id) {
     var index = rowIndexById_(sheet);
-    if (typeof index[id] === "number") row = index[id];
+    if (typeof index[id] === "number") return index[id];
   }
-  if (!row && number) {
-    var values = sheet.getRange(2, 1, last - 1, 2).getValues();
-    for (var i = values.length - 1; i >= 0; i--) {
-      var cellDate = formatDateCell_(values[i][0]);
-      var cellNumber = String(values[i][1] || "");
-      if (cellNumber !== number) continue;
-      if (!date || cellDate === date || cellDate.indexOf(date) === 0 || date.indexOf(cellDate) === 0) {
-        row = i + 2;
-        break;
-      }
+  if (!number) return 0;
+  var values = sheet.getRange(2, 1, last - 1, 2).getValues();
+  for (var i = values.length - 1; i >= 0; i--) {
+    var cellDate = formatDateCell_(values[i][0]);
+    var cellNumber = String(values[i][1] || "");
+    if (cellNumber !== number) continue;
+    if (!date || cellDate === date || cellDate.indexOf(date) === 0 || date.indexOf(cellDate) === 0) {
+      return i + 2;
     }
   }
+  return 0;
+}
+
+function removeRow_(sheet, id, number, date) {
+  var row = findRow_(sheet, id, number, date);
   if (!row) return false;
   trashDriveFile_(sheet.getRange(row, 5).getValue());
   sheet.deleteRow(row);
+  return true;
+}
+
+function updateRow_(sheet, body) {
+  var row = findRow_(
+    sheet,
+    String(body.id || ""),
+    String(body.oldNumber || body.number || ""),
+    String(body.date || "")
+  );
+  if (!row) return false;
+  sheet.getRange(row, 2).setValue(String(body.number || ""));
+  sheet.getRange(row, 3).setValue(String(body.note || ""));
+  var mark = body.unauthorized ? "ДА" : "";
+  var cell = sheet.getRange(row, 4);
+  cell.setValue(mark);
+  if (mark) {
+    cell.setBackground("#e23b3b");
+    cell.setFontColor("#ffffff");
+    cell.setFontWeight("bold");
+  } else {
+    cell.setBackground("#ffffff");
+    cell.setFontColor("#000000");
+    cell.setFontWeight("normal");
+  }
   return true;
 }
 

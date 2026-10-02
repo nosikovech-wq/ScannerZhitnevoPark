@@ -200,6 +200,24 @@ object SheetSync {
         post(url, JSONObject().put("action", "finish").toString())
     }
 
+    suspend fun update(url: String, plate: PlateEntity, previousNumber: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val fmt = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault())
+            val response = post(
+                url,
+                JSONObject()
+                    .put("action", "update")
+                    .put("id", plate.recordKey())
+                    .put("number", plate.number)
+                    .put("oldNumber", previousNumber)
+                    .put("date", fmt.format(Date(plate.timestamp)))
+                    .put("note", plate.note ?: "")
+                    .put("unauthorized", plate.unauthorizedExit)
+                    .toString()
+            )
+            response.optBoolean("updated")
+        }
+
     suspend fun remove(url: String, plate: PlateEntity): Boolean = withContext(Dispatchers.IO) {
         val fmt = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault())
         val response = post(

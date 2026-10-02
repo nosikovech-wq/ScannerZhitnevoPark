@@ -46,8 +46,10 @@ import com.example.russianplatescanner.ui.theme.Ok
 import com.example.russianplatescanner.ui.theme.Subtle
 import com.example.russianplatescanner.ui.theme.Surface
 import com.example.russianplatescanner.ui.theme.Surface2
+import com.example.russianplatescanner.util.BackupStore
 import com.example.russianplatescanner.util.PhotoStorage
 import com.example.russianplatescanner.util.SheetSync
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @Composable
@@ -186,7 +188,7 @@ private fun HelpScreen() {
         )
         HelpCard(
             "Журнал",
-            "Поиск ищет по номеру. «Все», «Сегодня» и «Дата» фильтруют список. «Excel» сохраняет таблицу на телефон. «Онлайн» отправляет новые строки и фото на Диск, уже отправленное не дублируется. Красная пометка в строке — несогласованный выезд. Нажатие открывает фото, дату и заметку. Если заметки нет, будет написано «Заметка отсутствует». Удаление убирает запись с телефона, из таблицы и с Диска."
+            "Поиск ищет по номеру. «Все», «Сегодня» и «Дата» фильтруют список. Карандаш меняет номер, заметку и пометку несогласованного выезда, уже выгруженная строка обновляется в таблице. «Excel» сохраняет таблицу на телефон. «Онлайн» отправляет новые строки и фото на Диск. Красная пометка — несогласованный выезд. Корзина удаляет запись с телефона, из таблицы и с Диска."
         )
         HelpCard(
             "Несколько устройств",
@@ -194,7 +196,7 @@ private fun HelpScreen() {
         )
         HelpCard(
             "Настройки",
-            "Шестерёнка справа от названия. Там адрес скрипта таблицы и кнопка «Сохранить». «Очистить базу» спрашивает пароль и удаляет записи, фото и онлайн-таблицу."
+            "Шестерёнка справа от названия. Там адрес скрипта таблицы, кнопка «Сохранить» и «Бэкап» — архив записей и фото. «Очистить базу» спрашивает пароль и удаляет записи, фото и онлайн-таблицу."
         )
         Spacer(Modifier.height(8.dp))
     }
@@ -225,6 +227,8 @@ private fun SettingsScreen() {
     var confirmClear by remember { mutableStateOf(false) }
     var clearing by remember { mutableStateOf(false) }
     var clearMessage by remember { mutableStateOf<String?>(null) }
+    var backingUp by remember { mutableStateOf(false) }
+    var backupMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize()) {
@@ -271,6 +275,38 @@ private fun SettingsScreen() {
                 }
                 .padding(vertical = 12.dp)
         )
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = {
+                backupMessage = null
+                scope.launch {
+                    backingUp = true
+                    try {
+                        val plates = app.plateDao.getAll().first()
+                        BackupStore.share(context, plates)
+                        backupMessage = "Архив с записями и фото готов"
+                    } catch (e: Exception) {
+                        backupMessage = e.message ?: "Не удалось создать бэкап"
+                    } finally {
+                        backingUp = false
+                    }
+                }
+            },
+            enabled = !backingUp && !clearing,
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Surface2,
+                contentColor = Fg,
+                disabledContainerColor = Surface2,
+                disabledContentColor = Muted
+            )
+        ) {
+            Text(if (backingUp) "Сбор архива…" else "Бэкап", color = Fg, fontWeight = FontWeight.Bold)
+        }
+        backupMessage?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(it, color = if (it.startsWith("Архив")) Ok else Danger, fontSize = 14.sp)
+        }
         Spacer(Modifier.height(8.dp))
         Button(
             onClick = {
