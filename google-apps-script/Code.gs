@@ -16,6 +16,10 @@ function doPost(e) {
       clearSheet_(sheet);
       return json({ ok: true });
     }
+    if (body.action === "numbers") {
+      var changed = renameRows_(sheet, body.rows || []);
+      return json({ ok: true, changed: changed });
+    }
     if (body.action === "append") {
       var result = appendRows_(sheet, body.rows || []);
       return json({ ok: true, inserted: result.inserted, skipped: result.skipped });
@@ -135,6 +139,22 @@ function existingIds_(sheet) {
   return ids;
 }
 
+function renameRows_(sheet, rows) {
+  var index = rowIndexById_(sheet);
+  var changed = 0;
+  rows.forEach(function (row) {
+    var id = String(row.id || "");
+    var number = String(row.number || "");
+    if (!id || !number || typeof index[id] !== "number") return;
+    var cell = sheet.getRange(index[id], 2);
+    if (String(cell.getValue()) !== number) {
+      cell.setValue(number);
+      changed++;
+    }
+  });
+  return changed;
+}
+
 function appendRows_(sheet, rows) {
   var index = rowIndexById_(sheet);
   var folder = null;
@@ -150,6 +170,7 @@ function appendRows_(sheet, rows) {
     if (row.photoData && !folder) folder = photosFolder_();
     var photoUrl = folder ? savePhoto_(row, folder) : "";
     if (typeof index[id] === "number") {
+      if (row.number) sheet.getRange(index[id], 2).setValue(String(row.number));
       if (photoUrl) {
         sheet.getRange(index[id], 5).setValue(photoUrl);
         updated++;

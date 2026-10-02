@@ -57,6 +57,8 @@ object SheetSync {
             withContext(Dispatchers.Main) { onProgress(tick) }
         }
         try {
+            report(Tick("Проверка номеров…", 0, 0, 0, 0))
+            runCatching { syncNumbers(url, plates) }
             report(Tick("Проверка строк в таблице…", 0, 0, 0, 0))
             val remote = fetchStatus(url)
             onAccepted(remote.keys.toList())
@@ -174,6 +176,19 @@ object SheetSync {
         }
     }
 
+    private fun syncNumbers(url: String, plates: List<PlateEntity>) {
+        if (plates.isEmpty()) return
+        val rows = JSONArray()
+        plates.forEach { plate ->
+            rows.put(
+                JSONObject()
+                    .put("id", plate.recordKey())
+                    .put("number", FleetBook.label(plate.number))
+            )
+        }
+        post(url, JSONObject().put("action", "numbers").put("rows", rows).toString())
+    }
+
     private fun append(
         url: String,
         chunk: List<PlateEntity>,
@@ -186,7 +201,7 @@ object SheetSync {
                 JSONObject()
                     .put("id", plate.recordKey())
                     .put("date", fmt.format(Date(plate.timestamp)))
-                    .put("number", plate.number)
+                    .put("number", FleetBook.label(plate.number))
                     .put("note", plate.note ?: "")
                     .put("unauthorized", plate.unauthorizedExit)
                     .put("photoData", if (photo.isEmpty()) "" else Base64.encodeToString(photo, Base64.NO_WRAP))
@@ -208,7 +223,7 @@ object SheetSync {
                 JSONObject()
                     .put("action", "update")
                     .put("id", plate.recordKey())
-                    .put("number", plate.number)
+                    .put("number", FleetBook.label(plate.number))
                     .put("oldNumber", previousNumber)
                     .put("date", fmt.format(Date(plate.timestamp)))
                     .put("note", plate.note ?: "")

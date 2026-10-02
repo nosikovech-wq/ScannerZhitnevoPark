@@ -103,6 +103,20 @@ object FleetBook {
         return if (matches.size == 1) matches.first() else normalized
     }
 
+    fun label(raw: String): String {
+        val number = resolve(raw)
+        Regex("^([АВЕКМНОРСТУХ]\\d{3}[АВЕКМНОРСТУХ]{2})(\\d{2,3})$").find(number)?.let {
+            return "${it.groupValues[1]} ${it.groupValues[2]}"
+        }
+        Regex("^([АВЕКМНОРСТУХ]{2}\\d{4})(\\d{2,3})$").find(number)?.let {
+            return "${it.groupValues[1]} ${it.groupValues[2]}"
+        }
+        Regex("^(\\d{4}[АВЕКМНОРСТУХ]{2})(\\d{2,3})$").find(number)?.let {
+            return "${it.groupValues[1]} ${it.groupValues[2]}"
+        }
+        return number
+    }
+
     private val byPlate: Map<String, Crew> by lazy { buildIndex() }
 
     private val tractors: List<String> by lazy {
