@@ -30,28 +30,12 @@ class ListViewModel(
 
     private var allPlates: List<PlateEntity> = emptyList()
     private val gate = Mutex()
-    private var epoch = 0
-
-    fun currentEpoch(): Int = epoch
 
     fun markUploaded(uids: List<String>) {
         if (uids.isEmpty()) return
         viewModelScope.launch {
             gate.withLock {
-                epoch++
                 uids.chunked(400).forEach { plateDao.markUploaded(it) }
-            }
-        }
-    }
-
-    fun syncFromServer(ids: Set<String>, startedEpoch: Int) {
-        viewModelScope.launch {
-            gate.withLock {
-                if (startedEpoch != epoch) return@withLock
-                val uploaded = allPlates.map { it.recordKey() }.filter { it in ids }
-                val missing = allPlates.map { it.recordKey() }.filter { it !in ids }
-                uploaded.chunked(400).forEach { plateDao.markUploaded(it) }
-                missing.chunked(400).forEach { plateDao.markNotUploaded(it) }
             }
         }
     }

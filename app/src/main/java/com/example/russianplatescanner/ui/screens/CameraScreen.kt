@@ -86,7 +86,6 @@ fun CameraScreen(
 
     LaunchedEffect(Unit) {
         viewModel.resumeScanner()
-        viewModel.refreshRemote()
         if (!hasCameraPermission) {
             permissionLauncher.launch(Manifest.permission.CAMERA)
         }

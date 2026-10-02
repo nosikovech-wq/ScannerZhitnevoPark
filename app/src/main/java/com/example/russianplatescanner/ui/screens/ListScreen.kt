@@ -116,14 +116,6 @@ fun ListScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
-        val url = SheetSync.url(context)
-        if (!url.startsWith("https://")) return@LaunchedEffect
-        val started = viewModel.currentEpoch()
-        val ids = runCatching { SheetSync.knownIds(url) }.getOrNull() ?: return@LaunchedEffect
-        viewModel.syncFromServer(ids, started)
-    }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
