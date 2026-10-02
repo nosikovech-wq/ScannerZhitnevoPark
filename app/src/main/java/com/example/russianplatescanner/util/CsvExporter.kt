@@ -19,7 +19,7 @@ object CsvExporter {
 
     fun share(context: Context, plates: List<PlateEntity>) {
         val file = File(context.cacheDir, "TransportnyyeTekhnologii.xls")
-        file.writeText(toExcelXml(plates), Charsets.UTF_8)
+        file.writeText(toExcelXml(plates, FleetBook.load(context)), Charsets.UTF_8)
         val uri = FileProvider.getUriForFile(
             context,
             "${context.packageName}.files",
@@ -33,7 +33,7 @@ object CsvExporter {
         context.startActivity(Intent.createChooser(intent, "Экспорт таблицы"))
     }
 
-    private fun toExcelXml(plates: List<PlateEntity>): String {
+    private fun toExcelXml(plates: List<PlateEntity>, fleet: Map<String, Crew>): String {
         val calendar = Calendar.getInstance()
         val grouped = plates.groupBy { plate ->
             calendar.timeInMillis = plate.timestamp
@@ -52,36 +52,54 @@ object CsvExporter {
             append("""<Style ss:ID="Date"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="$FONT" ss:Size="11" ss:Bold="1"/><NumberFormat ss:Format="dd.mmm"/></Style>""")
             append("""<Style ss:ID="Plate"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Font ss:FontName="$FONT" ss:Size="14" ss:Bold="1"/></Style>""")
             append("""<Style ss:ID="Time"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="$FONT" ss:Size="14"/><NumberFormat ss:Format="hh:mm:ss"/></Style>""")
+            append("""<Style ss:ID="Info"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Font ss:FontName="$FONT" ss:Size="12"/></Style>""")
             append("""</Styles>""")
             monthsToWrite.forEach { (key, monthPlates) ->
-                append(monthSheet(key.first, key.second, monthPlates))
+                append(monthSheet(key.first, key.second, monthPlates, fleet))
             }
             append("</Workbook>")
         }
     }
 
-    private fun monthSheet(year: Int, month: Int, plates: List<PlateEntity>): String {
+    private fun monthSheet(
+        year: Int,
+        month: Int,
+        plates: List<PlateEntity>,
+        fleet: Map<String, Crew>
+    ): String {
         val days = daysInMonth(year, month)
-        val byPlate = plates.groupBy { correctPlate(it.number) }
-        val plateOrder = byPlate.keys.sortedBy { formatTractor(it) }
+        val byTractor = plates.groupBy { plate ->
+            val scanned = correctPlate(plate.number)
+            val crew = fleet[scanned]
+            val tractor = crew?.tractor?.let { correctPlate(it) }.orEmpty()
+            if (tractor.isNotBlank()) tractor else scanned
+        }
+        val order = byTractor.keys.sortedBy { formatTractor(it) }
         return buildString {
             append("""<Worksheet ss:Name="${xml(months[month] + " " + year)}"><Table>""")
-            append("""<Column ss:AutoFitWidth="0" ss:Width="160"/>""")
+            append("""<Column ss:AutoFitWidth="0" ss:Width="150"/>""")
+            append("""<Column ss:AutoFitWidth="0" ss:Width="140"/>""")
+            append("""<Column ss:AutoFitWidth="0" ss:Width="220"/>""")
             repeat(days) {
                 append("""<Column ss:AutoFitWidth="0" ss:Width="62"/>""")
             }
             append("<Row>")
             append("""<Cell ss:StyleID="Title"><Data ss:Type="String">Номер тягача</Data></Cell>""")
+            append("""<Cell ss:StyleID="Title"><Data ss:Type="String">Прицеп</Data></Cell>""")
+            append("""<Cell ss:StyleID="Title"><Data ss:Type="String">ФИО</Data></Cell>""")
             for (day in 1..days) {
                 val serial = excelSerial(year, month, day).toInt()
                 append("""<Cell ss:StyleID="Date"><Data ss:Type="Number">$serial</Data></Cell>""")
             }
             append("</Row>")
-            plateOrder.forEach { number ->
-                val visits = byPlate.getValue(number)
+            order.forEach { tractorKey ->
+                val visits = byTractor.getValue(tractorKey)
+                val crew = visits.firstNotNullOfOrNull { fleet[correctPlate(it.number)] }
                 val byDay = visits.groupBy { dayOf(it.timestamp) }
                 append("<Row>")
-                append("""<Cell ss:StyleID="Plate"><Data ss:Type="String">${xml(formatTractor(number))}</Data></Cell>""")
+                append("""<Cell ss:StyleID="Plate"><Data ss:Type="String">${xml(formatTractor(crew?.tractor?.ifBlank { null } ?: tractorKey))}</Data></Cell>""")
+                append(textCell(crew?.trailer?.let { formatTractor(it) }.orEmpty()))
+                append(textCell(crew?.driver.orEmpty()))
                 for (day in 1..days) {
                     val first = byDay[day]?.minByOrNull { it.timestamp }
                     if (first == null) {
@@ -97,6 +115,11 @@ object CsvExporter {
             }
             append("</Table></Worksheet>")
         }
+    }
+
+    private fun textCell(value: String): String {
+        if (value.isBlank()) return "<Cell/>"
+        return """<Cell ss:StyleID="Info"><Data ss:Type="String">${xml(value)}</Data></Cell>"""
     }
 
     private fun formatTractor(number: String): String {
