@@ -190,7 +190,8 @@ object SheetSync {
 
     private fun directoryOf(number: String): Pair<String, String> {
         val crew = FleetBook.match(number) ?: return "" to ""
-        return FleetBook.label(crew.tractor, canonical = false) to crew.driver
+        val trailer = if (crew.trailer.isBlank()) "" else FleetBook.label(crew.trailer, canonical = false)
+        return trailer to crew.driver
     }
 
     private fun syncNumbers(url: String, plates: List<PlateEntity>) {
@@ -202,7 +203,7 @@ object SheetSync {
                 JSONObject()
                     .put("id", plate.recordKey())
                     .put("number", numberForSheet(plate, plates))
-                    .put("tractor", directory.first)
+                    .put("trailer", directory.first)
                     .put("driver", directory.second)
             )
         }
@@ -224,7 +225,7 @@ object SheetSync {
                     .put("id", plate.recordKey())
                     .put("date", fmt.format(Date(plate.timestamp)))
                     .put("number", numberForSheet(plate, plates))
-                    .put("tractor", directory.first)
+                    .put("trailer", directory.first)
                     .put("driver", directory.second)
                     .put("note", plate.note ?: "")
                     .put("unauthorized", plate.unauthorizedExit)
@@ -249,7 +250,7 @@ object SheetSync {
                     .put("action", "update")
                     .put("id", plate.recordKey())
                     .put("number", FleetBook.label(plate.number))
-                    .put("tractor", directory.first)
+                    .put("trailer", directory.first)
                     .put("driver", directory.second)
                     .put("oldNumber", previousNumber)
                     .put("date", fmt.format(Date(plate.timestamp)))

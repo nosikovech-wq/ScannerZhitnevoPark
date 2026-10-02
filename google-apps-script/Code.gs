@@ -1,4 +1,4 @@
-var HEADERS = ["ДАТА", "НОМЕР", "НОМЕР ТЯГАЧА", "ФИО", "ЗАМЕТКА", "НЕСОГЛАСОВАННЫЙ ВЫЕЗД", "ПУТЬ К ФОТО", "ID"];
+var HEADERS = ["ДАТА", "НОМЕР", "НОМЕР ПРИЦЕПА", "ФИО", "ЗАМЕТКА", "НЕСОГЛАСОВАННЫЙ ВЫЕЗД", "ПУТЬ К ФОТО", "ID"];
 
 function authorizeDrive() {
   var folder = photosFolder_();
@@ -66,7 +66,7 @@ function ensureHeaders_(sheet) {
     var header = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (value) {
       return String(value || "").trim().toUpperCase();
     });
-    if (header.indexOf("НОМЕР ТЯГАЧА") < 0 && header.indexOf("НОМЕР") === 1) {
+    if (header.indexOf("НОМЕР ПРИЦЕПА") < 0 && header.indexOf("НОМЕР ТЯГАЧА") < 0 && header.indexOf("НОМЕР") === 1) {
       sheet.insertColumnsAfter(2, 2);
     }
     sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]).setFontWeight("bold");
@@ -169,7 +169,7 @@ function renameRows_(sheet, rows) {
       cell.setValue(number);
       changed++;
     }
-    if (row.tractor !== undefined) sheet.getRange(index[id], 3).setValue(String(row.tractor || ""));
+    if (row.trailer !== undefined) sheet.getRange(index[id], 3).setValue(String(row.trailer || ""));
     if (row.driver !== undefined) sheet.getRange(index[id], 4).setValue(String(row.driver || ""));
   });
   return changed;
@@ -191,7 +191,7 @@ function appendRows_(sheet, rows) {
     var photoUrl = folder ? savePhoto_(row, folder) : "";
     if (typeof index[id] === "number") {
       if (row.number) sheet.getRange(index[id], 2).setValue(String(row.number));
-      if (row.tractor !== undefined) sheet.getRange(index[id], 3).setValue(String(row.tractor || ""));
+      if (row.trailer !== undefined) sheet.getRange(index[id], 3).setValue(String(row.trailer || ""));
       if (row.driver !== undefined) sheet.getRange(index[id], 4).setValue(String(row.driver || ""));
       if (photoUrl) {
         sheet.getRange(index[id], 7).setValue(photoUrl);
@@ -209,7 +209,7 @@ function appendRows_(sheet, rows) {
     toAdd.push([
       row.date || "",
       row.number || "",
-      row.tractor || "",
+      row.trailer || "",
       row.driver || "",
       row.note || "",
       row.unauthorized ? "ДА" : "",
@@ -260,7 +260,7 @@ function updateRow_(sheet, body) {
   );
   if (!row) return false;
   sheet.getRange(row, 2).setValue(String(body.number || ""));
-  sheet.getRange(row, 3).setValue(String(body.tractor || ""));
+  sheet.getRange(row, 3).setValue(String(body.trailer || ""));
   sheet.getRange(row, 4).setValue(String(body.driver || ""));
   sheet.getRange(row, 5).setValue(String(body.note || ""));
   var mark = body.unauthorized ? "ДА" : "";
