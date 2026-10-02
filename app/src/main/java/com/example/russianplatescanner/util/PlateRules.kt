@@ -17,7 +17,7 @@ fun normalizePlate(raw: String): String {
 }
 
 /** A plate cannot be stored again until this long after its last save. */
-const val REPEAT_LOCK_MS = 24L * 60 * 60 * 1000
+const val REPEAT_LOCK_MS = 22L * 60 * 60 * 1000
 
 fun repeatWindowStart(now: Long = System.currentTimeMillis()): Long = now - REPEAT_LOCK_MS
 

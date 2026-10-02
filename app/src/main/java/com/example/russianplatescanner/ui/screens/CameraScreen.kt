@@ -326,7 +326,7 @@ fun CameraScreen(
                     )
                 } else {
                     Text(
-                        "За последние 24 часа этого номера нет.",
+                        "За последние 22 часа этого номера нет.",
                         color = Muted,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -451,7 +451,7 @@ private fun DuplicateNotice(
                 }
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "Повтор можно сохранить с ${formatWhen(hit.availableAt)}. Отсчёт 24 часов идёт от времени записи.",
+                    "Повтор можно сохранить с ${formatWhen(hit.availableAt)}. Отсчёт 22 часов идёт от времени записи.",
                     color = Muted
                 )
             }

@@ -5,34 +5,19 @@ import android.content.Intent
 import androidx.core.content.FileProvider
 import com.example.russianplatescanner.data.PlateEntity
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
+import java.util.Calendar
 import java.util.Locale
+import java.util.TimeZone
 
 object CsvExporter {
-    private val headers = listOf(
-        "ДАТА",
-        "НОМЕР",
-        "ЗАМЕТКА",
-        "НЕСОГЛАСОВАННЫЙ ВЫЕЗД",
-        "ПУТЬ К ФОТО"
+    private val months = arrayOf(
+        "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+        "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"
     )
 
     fun share(context: Context, plates: List<PlateEntity>) {
-        val fmt = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault())
-        val rows = plates
-            .sortedBy { it.timestamp }
-            .map { plate ->
-            listOf(
-                fmt.format(Date(plate.timestamp)),
-                plate.number,
-                plate.note ?: "",
-                if (plate.unauthorizedExit) "ДА" else "",
-                plate.photoPath
-            )
-        }
         val file = File(context.cacheDir, "TransportnyyeTekhnologii.xls")
-        file.writeText(toExcelXml(rows), Charsets.UTF_8)
+        file.writeText(toExcelXml(plates), Charsets.UTF_8)
         val uri = FileProvider.getUriForFile(
             context,
             "${context.packageName}.files",
@@ -46,50 +31,127 @@ object CsvExporter {
         context.startActivity(Intent.createChooser(intent, "Экспорт таблицы"))
     }
 
-    private fun toExcelXml(rows: List<List<String>>): String {
-        val widths = headers.indices.map { col ->
-            val longest = (sequenceOf(headers[col]) + rows.asSequence().map { it[col] })
-                .maxOf { it.length }
-            (longest.coerceAtLeast(8) * 7.5 + 18.0).coerceAtMost(720.0)
+    private fun toExcelXml(plates: List<PlateEntity>): String {
+        val calendar = Calendar.getInstance()
+        val grouped = plates.groupBy { plate ->
+            calendar.timeInMillis = plate.timestamp
+            calendar.get(Calendar.YEAR) to calendar.get(Calendar.MONTH)
+        }.toSortedMap(compareBy<Pair<Int, Int>> { it.first }.thenBy { it.second })
+        val monthsToWrite = if (grouped.isEmpty()) {
+            val now = Calendar.getInstance()
+            mapOf((now.get(Calendar.YEAR) to now.get(Calendar.MONTH)) to emptyList())
+        } else {
+            grouped
         }
         return buildString {
             append("""<?xml version="1.0" encoding="UTF-8"?>""")
             append("""<?mso-application progid="Excel.Sheet"?>""")
             append("""<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">""")
             append("""<Styles>""")
-            append("""<Style ss:ID="Header"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/></Style>""")
-            append("""<Style ss:ID="Cell"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/></Style>""")
-            append("""<Style ss:ID="Alert"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="11" ss:Color="#FFFFFF" ss:Bold="1"/><Interior ss:Color="#E23B3B" ss:Pattern="Solid"/></Style>""")
+            append("""<Style ss:ID="Title"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="14" ss:Bold="1"/></Style>""")
+            append("""<Style ss:ID="Date"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/><NumberFormat ss:Format="dd.mmm"/></Style>""")
+            append("""<Style ss:ID="Plate"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="14" ss:Bold="1"/></Style>""")
+            append("""<Style ss:ID="Time"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="14"/><NumberFormat ss:Format="hh:mm:ss"/></Style>""")
             append("""</Styles>""")
-            append("""<Worksheet ss:Name="TransportnyyeTekhnologii"><Table>""")
-            widths.forEach { width ->
-                append("""<Column ss:AutoFitWidth="0" ss:Width="${"%.1f".format(Locale.US, width)}"/>""")
+            monthsToWrite.forEach { (key, monthPlates) ->
+                append(monthSheet(key.first, key.second, monthPlates))
+            }
+            append("</Workbook>")
+        }
+    }
+
+    private fun monthSheet(year: Int, month: Int, plates: List<PlateEntity>): String {
+        val days = daysInMonth(year, month)
+        val byPlate = plates.groupBy { correctPlate(it.number) }
+        val plateOrder = byPlate.keys.sortedBy { formatTractor(it) }
+        return buildString {
+            append("""<Worksheet ss:Name="${xml(months[month] + " " + year)}"><Table>""")
+            append("""<Column ss:AutoFitWidth="0" ss:Width="160"/>""")
+            repeat(days) {
+                append("""<Column ss:AutoFitWidth="0" ss:Width="62"/>""")
             }
             append("<Row>")
-            headers.forEach { header ->
-                append("""<Cell ss:StyleID="Header"><Data ss:Type="String">${xml(header)}</Data></Cell>""")
+            append("""<Cell ss:StyleID="Title"><Data ss:Type="String">Номер тягача</Data></Cell>""")
+            for (day in 1..days) {
+                val serial = excelSerial(year, month, day).toInt()
+                append("""<Cell ss:StyleID="Date"><Data ss:Type="Number">$serial</Data></Cell>""")
             }
             append("</Row>")
-            rows.forEach { row ->
+            plateOrder.forEach { number ->
+                val visits = byPlate.getValue(number)
+                val byDay = visits.groupBy { dayOf(it.timestamp) }
                 append("<Row>")
-                row.forEachIndexed { index, cell ->
-                    val style = if (index == 3 && cell.equals("ДА", ignoreCase = true)) "Alert" else "Cell"
-                    append("""<Cell ss:StyleID="$style"><Data ss:Type="String">${xml(cell)}</Data></Cell>""")
+                append("""<Cell ss:StyleID="Plate"><Data ss:Type="String">${xml(formatTractor(number))}</Data></Cell>""")
+                for (day in 1..days) {
+                    val first = byDay[day]?.minByOrNull { it.timestamp }
+                    if (first == null) {
+                        append("<Cell/>")
+                    } else {
+                        val fraction = timeFraction(first.timestamp)
+                        append(
+                            """<Cell ss:StyleID="Time"><Data ss:Type="Number">${"%.8f".format(Locale.US, fraction)}</Data></Cell>"""
+                        )
+                    }
                 }
                 append("</Row>")
             }
-            append("</Table></Worksheet></Workbook>")
+            append("</Table></Worksheet>")
         }
+    }
+
+    private fun formatTractor(number: String): String {
+        val normalized = correctPlate(number)
+        Regex("^([АВЕКМНОРСТУХ]\\d{3}[АВЕКМНОРСТУХ]{2})(\\d{2,3})$").find(normalized)?.let {
+            return "${it.groupValues[1]} ${it.groupValues[2]}"
+        }
+        Regex("^([АВЕКМНОРСТУХ]{2}\\d{4})(\\d{2,3})$").find(normalized)?.let {
+            return "${it.groupValues[1]} ${it.groupValues[2]}"
+        }
+        Regex("^(\\d{4}[АВЕКМНОРСТУХ]{2})(\\d{2,3})$").find(normalized)?.let {
+            return "${it.groupValues[1]} ${it.groupValues[2]}"
+        }
+        return normalized
+    }
+
+    private fun daysInMonth(year: Int, month: Int): Int {
+        val calendar = Calendar.getInstance()
+        calendar.set(year, month, 1)
+        return calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+    }
+
+    private fun dayOf(timestamp: Long): Int {
+        val calendar = Calendar.getInstance()
+        calendar.timeInMillis = timestamp
+        return calendar.get(Calendar.DAY_OF_MONTH)
+    }
+
+    private fun timeFraction(timestamp: Long): Double {
+        val calendar = Calendar.getInstance()
+        calendar.timeInMillis = timestamp
+        val seconds = calendar.get(Calendar.HOUR_OF_DAY) * 3600 +
+            calendar.get(Calendar.MINUTE) * 60 +
+            calendar.get(Calendar.SECOND)
+        return seconds / 86400.0
+    }
+
+    private fun excelSerial(year: Int, month: Int, day: Int): Double {
+        val date = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
+        date.set(year, month, day, 0, 0, 0)
+        date.set(Calendar.MILLISECOND, 0)
+        val epoch = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
+        epoch.set(1899, Calendar.DECEMBER, 30, 0, 0, 0)
+        epoch.set(Calendar.MILLISECOND, 0)
+        return (date.timeInMillis - epoch.timeInMillis) / 86400000.0
     }
 
     private fun xml(value: String): String {
         return buildString(value.length) {
             value.forEach { ch ->
                 when (ch) {
-                    '&' -> append("&" + "amp;")
-                    '<' -> append("&" + "lt;")
-                    '>' -> append("&" + "gt;")
-                    '"' -> append("&" + "quot;")
+                    '&' -> append("&")
+                    '<' -> append("<")
+                    '>' -> append(">")
+                    '"' -> append(""")
                     else -> append(ch)
                 }
             }
