@@ -148,10 +148,10 @@ object CsvExporter {
         return buildString(value.length) {
             value.forEach { ch ->
                 when (ch) {
-                    '&' -> append("&")
-                    '<' -> append("<")
-                    '>' -> append(">")
-                    '"' -> append(""")
+                    '&' -> append("&" + "amp;")
+                    '<' -> append("&" + "lt;")
+                    '>' -> append("&" + "gt;")
+                    '"' -> append("&" + "quot;")
                     else -> append(ch)
                 }
             }
