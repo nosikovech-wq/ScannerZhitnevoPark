@@ -71,8 +71,7 @@ object CsvExporter {
         val byTractor = plates.groupBy { plate ->
             val scanned = correctPlate(plate.number)
             val crew = fleet[scanned]
-            val tractor = crew?.tractor?.let { correctPlate(it) }.orEmpty()
-            if (tractor.isNotBlank()) tractor else scanned
+            crew?.tractor?.let { correctPlate(it) }.orEmpty().ifBlank { scanned }
         }
         val order = byTractor.keys.sortedBy { formatTractor(it) }
         return buildString {
