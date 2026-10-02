@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
@@ -48,6 +49,7 @@ import com.example.russianplatescanner.ui.theme.*
 import com.example.russianplatescanner.util.CsvExporter
 import com.example.russianplatescanner.util.SheetSync
 import com.example.russianplatescanner.util.formatPlateUi
+import com.example.russianplatescanner.util.normalizePlate
 import com.example.russianplatescanner.util.startOfLocalDay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -69,6 +71,15 @@ fun ListScreen(
     val pendingUpload by viewModel.pendingUpload.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var dayStart by remember { mutableStateOf<Long?>(null) }
+    val visible = remember(plates, searchQuery, dayStart) {
+        val needle = normalizePlate(searchQuery)
+        val start = dayStart
+        plates.filter { plate ->
+            val matchesDay = start == null || plate.timestamp in start until start + DAY_MS
+            val matchesQuery = needle.isEmpty() || normalizePlate(plate.number).contains(needle)
+            matchesDay && matchesQuery
+        }
+    }
     var showDatePicker by remember { mutableStateOf(false) }
     var upload by remember { mutableStateOf<SheetSync.Tick?>(null) }
     var cancelUpload by remember { mutableStateOf(false) }
@@ -97,7 +108,7 @@ fun ListScreen(
         scope.launch {
             SheetSync.upload(
                 url,
-                plates,
+                visible,
                 { cancelUpload },
                 onProgress = { tick -> upload = tick },
                 onAccepted = { ids -> viewModel.markUploaded(ids) }
@@ -138,13 +149,17 @@ fun ListScreen(
         }
         OutlinedTextField(
             value = searchQuery,
-            onValueChange = {
-                searchQuery = it
-                viewModel.search(it)
-            },
+            onValueChange = { searchQuery = it },
             modifier = Modifier.fillMaxWidth(),
             placeholder = { Text("Поиск по номеру") },
-            leadingIcon = { Icon(Icons.Outlined.Search, null, tint = Subtle) },
+            leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, tint = Subtle) },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { searchQuery = "" }) {
+                        Icon(Icons.Outlined.Close, contentDescription = "Очистить поиск", tint = Subtle)
+                    }
+                }
+            },
             singleLine = true,
             shape = RoundedCornerShape(8.dp),
             colors = OutlinedTextFieldDefaults.colors(
@@ -164,12 +179,9 @@ fun ListScreen(
         ) {
             DayChip("Все", dayStart == null) {
                 dayStart = null
-                viewModel.setDay(null)
             }
             DayChip("Сегодня", dayStart == startOfLocalDay()) {
-                val start = startOfLocalDay()
-                dayStart = start
-                viewModel.setDay(start)
+                dayStart = startOfLocalDay()
             }
             DayChip(
                 label = if (dayStart != null && dayStart != startOfLocalDay()) {
@@ -188,8 +200,8 @@ fun ListScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             TextButton(
-                onClick = { CsvExporter.share(context, plates) },
-                enabled = plates.isNotEmpty(),
+                onClick = { CsvExporter.share(context, visible) },
+                enabled = visible.isNotEmpty(),
                 modifier = Modifier
                     .weight(1f)
                     .height(48.dp)
@@ -204,7 +216,7 @@ fun ListScreen(
             }
             TextButton(
                 onClick = { startUpload() },
-                enabled = plates.isNotEmpty() && upload?.finished != false,
+                enabled = visible.isNotEmpty() && upload?.finished != false,
                 modifier = Modifier
                     .weight(1f)
                     .height(48.dp)
@@ -221,7 +233,7 @@ fun ListScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        if (plates.isEmpty()) {
+        if (visible.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -243,7 +255,7 @@ fun ListScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(bottom = 24.dp)
             ) {
-                items(plates, key = { it.id }) { plate ->
+                items(visible, key = { it.id }) { plate ->
                     PlateItem(
                         plate = plate,
                         onClick = { onItemClick(plate.id) },
@@ -282,7 +294,6 @@ fun ListScreen(
                                 set(Calendar.MILLISECOND, 0)
                             }
                             dayStart = local.timeInMillis
-                            viewModel.setDay(local.timeInMillis)
                         }
                         showDatePicker = false
                     }
@@ -517,6 +528,8 @@ fun PlateItem(
         }
     }
 }
+
+private const val DAY_MS = 24L * 60 * 60 * 1000
 
 @Composable
 private fun UploadDialog(

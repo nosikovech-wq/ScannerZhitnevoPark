@@ -18,10 +18,12 @@ import com.example.russianplatescanner.util.SheetSync
 import com.example.russianplatescanner.util.correctPlate
 import com.example.russianplatescanner.util.repeatWindowStart
 import com.example.russianplatescanner.util.toGuideBitmap
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 sealed class CameraUiState {
     data object Idle : CameraUiState()
@@ -238,6 +240,7 @@ class CameraViewModel(
                     rawText = result.rawText,
                     bitmap = bitmap
                 )
+                refreshRemote()
             } catch (e: Exception) {
                 _uiState.value = CameraUiState.Result(
                     number = confirmed,
@@ -261,27 +264,30 @@ class CameraViewModel(
         saving = true
         viewModelScope.launch {
             try {
-                val normalized = correctPlate(number)
-                if (normalized.isBlank()) {
-                    onResult(SaveResult.Failed("Пустой номер"))
-                    return@launch
+                val outcome = withContext(Dispatchers.IO) {
+                    val normalized = correctPlate(number)
+                    if (normalized.isBlank()) {
+                        SaveResult.Failed("Пустой номер")
+                    } else {
+                        val existing = recentHit(normalized)
+                        if (existing != null && !unauthorized) {
+                            SaveResult.Duplicate(existing)
+                        } else {
+                            val path = PhotoStorage.savePhoto(appContext, bitmap)
+                            plateDao.insert(
+                                PlateEntity(
+                                    number = normalized,
+                                    photoPath = path,
+                                    note = note?.trim()?.ifBlank { null },
+                                    unauthorizedExit = unauthorized && existing != null
+                                )
+                            )
+                            SaveResult.Saved
+                        }
+                    }
                 }
-                runCatching { pullRemote() }
-                val existing = recentHit(normalized)
-                if (existing != null && !unauthorized) {
-                    onResult(SaveResult.Duplicate(existing))
-                    return@launch
-                }
-                val path = PhotoStorage.savePhoto(appContext, bitmap)
-                plateDao.insert(
-                    PlateEntity(
-                        number = normalized,
-                        photoPath = path,
-                        note = note?.trim()?.ifBlank { null },
-                        unauthorizedExit = unauthorized && existing != null
-                    )
-                )
-                onResult(SaveResult.Saved)
+                onResult(outcome)
+                if (outcome is SaveResult.Saved) refreshRemote()
             } catch (e: Exception) {
                 onResult(SaveResult.Failed(e.message ?: "Не удалось сохранить"))
             } finally {

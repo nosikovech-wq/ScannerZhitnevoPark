@@ -9,7 +9,6 @@ import com.example.russianplatescanner.data.PlateEntity
 import com.example.russianplatescanner.util.PhotoStorage
 import com.example.russianplatescanner.util.SheetSync
 import com.example.russianplatescanner.util.correctPlate
-import com.example.russianplatescanner.util.normalizePlate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,8 +29,6 @@ class ListViewModel(
     val pendingUpload: StateFlow<Int> = _pendingUpload.asStateFlow()
 
     private var allPlates: List<PlateEntity> = emptyList()
-    private var currentQuery = ""
-    private var dayStart: Long? = null
     private val gate = Mutex()
     private var epoch = 0
 
@@ -109,30 +106,9 @@ class ListViewModel(
         }
     }
 
-    fun search(query: String) {
-        currentQuery = query.trim()
-        publish()
-    }
-
-    fun setDay(start: Long?) {
-        dayStart = start
-        publish()
-    }
-
     private fun publish() {
-        val query = currentQuery
-        val start = dayStart
-        val needle = normalizePlate(query)
-        _plates.value = allPlates.filter { plate ->
-            val matchesDay = start == null || plate.timestamp in start until start + DAY_MS
-            val matchesQuery = needle.isBlank() || normalizePlate(plate.number).contains(needle)
-            matchesDay && matchesQuery
-        }
+        _plates.value = allPlates
         _pendingUpload.value = allPlates.count { !it.uploaded }
-    }
-
-    private companion object {
-        const val DAY_MS = 24L * 60 * 60 * 1000
     }
 }
 
