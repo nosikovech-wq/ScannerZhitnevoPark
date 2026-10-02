@@ -85,7 +85,7 @@ object CsvExporter {
             }
             append("<Row>")
             append("""<Cell ss:StyleID="Title"><Data ss:Type="String">Номер тягача</Data></Cell>""")
-            append("""<Cell ss:StyleID="Title"><Data ss:Type="String">Прицеп</Data></Cell>""")
+            append("""<Cell ss:StyleID="Title"><Data ss:Type="String">Номер прицепа</Data></Cell>""")
             append("""<Cell ss:StyleID="Title"><Data ss:Type="String">ФИО</Data></Cell>""")
             for (day in 1..days) {
                 val serial = excelSerial(year, month, day).toInt()
