@@ -10,6 +10,8 @@ import java.util.Locale
 import java.util.TimeZone
 
 object CsvExporter {
+    @Suppress("SpellCheckingInspection")
+    private const val FONT = "Calibri"
     private val months = arrayOf(
         "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
         "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"
@@ -37,21 +39,19 @@ object CsvExporter {
             calendar.timeInMillis = plate.timestamp
             calendar.get(Calendar.YEAR) to calendar.get(Calendar.MONTH)
         }.toSortedMap(compareBy<Pair<Int, Int>> { it.first }.thenBy { it.second })
-        val monthsToWrite = if (grouped.isEmpty()) {
+        val monthsToWrite = grouped.ifEmpty {
             val now = Calendar.getInstance()
             mapOf((now.get(Calendar.YEAR) to now.get(Calendar.MONTH)) to emptyList())
-        } else {
-            grouped
         }
         return buildString {
             append("""<?xml version="1.0" encoding="UTF-8"?>""")
             append("""<?mso-application progid="Excel.Sheet"?>""")
             append("""<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">""")
             append("""<Styles>""")
-            append("""<Style ss:ID="Title"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="14" ss:Bold="1"/></Style>""")
-            append("""<Style ss:ID="Date"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/><NumberFormat ss:Format="dd.mmm"/></Style>""")
-            append("""<Style ss:ID="Plate"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="14" ss:Bold="1"/></Style>""")
-            append("""<Style ss:ID="Time"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="14"/><NumberFormat ss:Format="hh:mm:ss"/></Style>""")
+            append("""<Style ss:ID="Title"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Font ss:FontName="$FONT" ss:Size="14" ss:Bold="1"/></Style>""")
+            append("""<Style ss:ID="Date"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="$FONT" ss:Size="11" ss:Bold="1"/><NumberFormat ss:Format="dd.mmm"/></Style>""")
+            append("""<Style ss:ID="Plate"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Font ss:FontName="$FONT" ss:Size="14" ss:Bold="1"/></Style>""")
+            append("""<Style ss:ID="Time"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="$FONT" ss:Size="14"/><NumberFormat ss:Format="hh:mm:ss"/></Style>""")
             append("""</Styles>""")
             monthsToWrite.forEach { (key, monthPlates) ->
                 append(monthSheet(key.first, key.second, monthPlates))
