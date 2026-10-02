@@ -31,6 +31,9 @@ interface PlateDao {
     @Query("SELECT * FROM plates WHERE timestamp >= :since")
     suspend fun recordedSince(since: Long): List<PlateEntity>
 
+    @Query("SELECT uid FROM plates")
+    suspend fun allUids(): List<String>
+
     @Query("SELECT photoPath FROM plates")
     suspend fun allPhotoPaths(): List<String>
 

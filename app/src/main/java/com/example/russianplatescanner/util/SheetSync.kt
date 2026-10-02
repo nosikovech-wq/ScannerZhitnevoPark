@@ -188,14 +188,22 @@ object SheetSync {
         return if (blocked) FleetBook.label(stored, canonical = false) else FleetBook.label(plate.number)
     }
 
+    private fun directoryOf(number: String): Pair<String, String> {
+        val crew = FleetBook.match(number) ?: return "" to ""
+        return FleetBook.label(crew.tractor, canonical = false) to crew.driver
+    }
+
     private fun syncNumbers(url: String, plates: List<PlateEntity>) {
         if (plates.isEmpty()) return
         val rows = JSONArray()
         plates.forEach { plate ->
+            val directory = directoryOf(plate.number)
             rows.put(
                 JSONObject()
                     .put("id", plate.recordKey())
                     .put("number", numberForSheet(plate, plates))
+                    .put("tractor", directory.first)
+                    .put("driver", directory.second)
             )
         }
         post(url, JSONObject().put("action", "numbers").put("rows", rows).toString())
@@ -210,11 +218,14 @@ object SheetSync {
         val rows = JSONArray()
         chunk.forEach { plate ->
             val photo = PhotoStorage.jpegBytesForUpload(plate.photoPath)
+            val directory = directoryOf(plate.number)
             rows.put(
                 JSONObject()
                     .put("id", plate.recordKey())
                     .put("date", fmt.format(Date(plate.timestamp)))
                     .put("number", numberForSheet(plate, plates))
+                    .put("tractor", directory.first)
+                    .put("driver", directory.second)
                     .put("note", plate.note ?: "")
                     .put("unauthorized", plate.unauthorizedExit)
                     .put("photoData", if (photo.isEmpty()) "" else Base64.encodeToString(photo, Base64.NO_WRAP))
@@ -231,12 +242,15 @@ object SheetSync {
     suspend fun update(url: String, plate: PlateEntity, previousNumber: String): Boolean =
         withContext(Dispatchers.IO) {
             val fmt = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault())
+            val directory = directoryOf(plate.number)
             val response = post(
                 url,
                 JSONObject()
                     .put("action", "update")
                     .put("id", plate.recordKey())
                     .put("number", FleetBook.label(plate.number))
+                    .put("tractor", directory.first)
+                    .put("driver", directory.second)
                     .put("oldNumber", previousNumber)
                     .put("date", fmt.format(Date(plate.timestamp)))
                     .put("note", plate.note ?: "")

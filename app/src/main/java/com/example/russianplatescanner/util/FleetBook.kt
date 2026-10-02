@@ -1,5 +1,8 @@
 package com.example.russianplatescanner.util
 
+import android.content.Context
+import java.io.File
+
 data class Crew(
     val tractor: String,
     val trailer: String,
@@ -83,18 +86,86 @@ object FleetBook {
 Х771АХ 761;СЕ5057 61;Гнездилов Василий Васильевич
 """
 
-    fun load(): Map<String, Crew> = byPlate
+    private val gate = Any()
+    private var byPlate: Map<String, Crew> = emptyMap()
+    private var tractors: List<String> = emptyList()
+
+    init {
+        install(parse(table))
+    }
+
+    fun load(): Map<String, Crew> = synchronized(gate) { byPlate }
+
+    fun crews(): List<Crew> = synchronized(gate) {
+        byPlate.values.distinctBy { correctPlate(it.tractor) }
+    }
+
+    fun match(raw: String): Crew? {
+        val normalized = correctPlate(raw)
+        val plates = load()
+        plates[normalized]?.let { return it }
+        val resolved = resolve(raw)
+        return if (resolved == normalized) null else plates[resolved]
+    }
+
+    fun install(crews: List<Crew>) {
+        val map = LinkedHashMap<String, Crew>()
+        crews.forEach { crew ->
+            val tractor = correctPlate(crew.tractor)
+            val trailer = correctPlate(crew.trailer)
+            if (tractor.isNotBlank()) map.putIfAbsent(tractor, crew)
+            if (trailer.isNotBlank()) map.putIfAbsent(trailer, crew)
+        }
+        synchronized(gate) {
+            byPlate = map
+            tractors = map.values.map { correctPlate(it.tractor) }.filter { it.length >= 8 }.distinct()
+        }
+    }
+
+    fun loadLocal(context: Context) {
+        val file = File(context.filesDir, "fleet.csv")
+        if (!file.isFile || file.length() == 0L) {
+            file.writeText(table.trim() + "\n", Charsets.UTF_8)
+        }
+        val crews = parse(file.readText(Charsets.UTF_8))
+        if (crews.isNotEmpty()) install(crews)
+    }
+
+    fun saveLocal(context: Context, crews: List<Crew>) {
+        val file = File(context.filesDir, "fleet.csv")
+        file.writeText(
+            buildString {
+                append("Номер тягача;Номер прицепа;ФИО\n")
+                crews.forEach { crew ->
+                    append(crew.tractor.trim())
+                    append(';')
+                    append(crew.trailer.trim())
+                    append(';')
+                    append(crew.driver.trim())
+                    append('\n')
+                }
+            },
+            Charsets.UTF_8
+        )
+        install(crews)
+    }
 
     /** Exact fleet plate, or the same plate body with a region that only missed the first digit. */
     fun resolve(raw: String): String {
         val normalized = correctPlate(raw)
         if (normalized.isBlank()) return normalized
-        byPlate[normalized]?.let { crew ->
+        val plates: Map<String, Crew>
+        val known: List<String>
+        synchronized(gate) {
+            plates = byPlate
+            known = tractors
+        }
+        plates[normalized]?.let { crew ->
             return correctPlate(crew.tractor).ifBlank { normalized }
         }
         val body = if (normalized.length >= 8) normalized.take(6) else return normalized
         val region = normalized.drop(6)
-        val matches = tractors.filter { tractor ->
+        val matches = known.filter { tractor ->
             val fleetRegion = tractor.drop(6)
             tractor.startsWith(body) &&
                 fleetRegion.length == region.length + 1 &&
@@ -115,23 +186,6 @@ object FleetBook {
             return "${it.groupValues[1]} ${it.groupValues[2]}"
         }
         return number
-    }
-
-    private val byPlate: Map<String, Crew> by lazy { buildIndex() }
-
-    private val tractors: List<String> by lazy {
-        byPlate.values.map { correctPlate(it.tractor) }.filter { it.length >= 8 }.distinct()
-    }
-
-    private fun buildIndex(): Map<String, Crew> {
-        val map = LinkedHashMap<String, Crew>()
-        parse(table).forEach { crew ->
-            val tractor = correctPlate(crew.tractor)
-            val trailer = correctPlate(crew.trailer)
-            if (tractor.isNotBlank()) map.putIfAbsent(tractor, crew)
-            if (trailer.isNotBlank()) map.putIfAbsent(trailer, crew)
-        }
-        return map
     }
 
     private fun parse(text: String): List<Crew> {

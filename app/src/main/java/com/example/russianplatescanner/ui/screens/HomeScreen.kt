@@ -2,6 +2,8 @@ package com.example.russianplatescanner.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -49,8 +51,10 @@ import com.example.russianplatescanner.ui.theme.Surface2
 import com.example.russianplatescanner.util.BackupStore
 import com.example.russianplatescanner.util.PhotoStorage
 import com.example.russianplatescanner.util.SheetSync
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun HomeScreen(
@@ -184,11 +188,11 @@ private fun HelpScreen() {
         )
         HelpCard(
             "Проверка номера",
-            "После снимка камера выключается. Номер можно поправить, заметку можно не писать. «В базу» сохраняет запись. «Ещё раз» снимает заново. Красная кнопка «Несогласованный выезд» записывает повтор, если номер уже есть за последние сутки. Обычный повтор без неё не сохраняется."
+            "После снимка камера выключается. Если номер есть в справочнике, подставляется номер тягача, а ниже видны прицеп и ФИО. Номер можно поправить, заметку можно не писать. «В базу» сохраняет запись. «Ещё раз» снимает заново. Красная кнопка «Несогласованный выезд» записывает повтор, если номер уже есть за последние сутки. Обычный повтор без неё не сохраняется."
         )
         HelpCard(
             "Журнал",
-            "Поиск ищет по номеру. «Все», «Сегодня» и «Дата» фильтруют список. Карандаш меняет номер, заметку и пометку несогласованного выезда, уже выгруженная строка обновляется в таблице. «Excel» сохраняет месяц: номер тягача, прицеп и ФИО из справочника, дальше время по дням. «Онлайн» отправляет новые строки и фото на Диск. Красная пометка — несогласованный выезд. Корзина удаляет запись с телефона, из таблицы и с Диска."
+            "Поиск ищет по номеру. «Все», «Сегодня» и «Дата» фильтруют список. Карандаш меняет номер, заметку и пометку несогласованного выезда, уже выгруженная строка обновляется в таблице. «Excel» сохраняет месяц: номер тягача, прицеп и ФИО из справочника, дальше время по дням. «Онлайн» отправляет строки и фото, а в таблице после номера пишет номер тягача и ФИО. Красная пометка — несогласованный выезд. Корзина удаляет запись с телефона, из таблицы и с Диска."
         )
         HelpCard(
             "Этот телефон",
@@ -196,7 +200,7 @@ private fun HelpScreen() {
         )
         HelpCard(
             "Настройки",
-            "Шестерёнка справа от названия. Там адрес скрипта таблицы, кнопка «Сохранить» и «Бэкап» — архив записей и фото. «Очистить базу» спрашивает пароль и удаляет записи, фото и онлайн-таблицу."
+            "Шестерёнка справа от названия. Там адрес скрипта, справочник тягачей, «Бэкап» и «Восстановить». «Очистить базу» спрашивает пароль и удаляет записи, фото и онлайн-таблицу."
         )
         Spacer(Modifier.height(8.dp))
     }
@@ -228,8 +232,31 @@ private fun SettingsScreen() {
     var clearing by remember { mutableStateOf(false) }
     var clearMessage by remember { mutableStateOf<String?>(null) }
     var backingUp by remember { mutableStateOf(false) }
+    var restoring by remember { mutableStateOf(false) }
     var backupMessage by remember { mutableStateOf<String?>(null) }
+    var fleetOpen by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            restoring = true
+            backupMessage = null
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    BackupStore.restore(context, uri, app.plateDao)
+                }
+                backupMessage = "Восстановлено: ${result.added}. Уже были: ${result.skipped}."
+            } catch (e: Exception) {
+                backupMessage = e.message ?: "Не удалось восстановить"
+            } finally {
+                restoring = false
+            }
+        }
+    }
+    if (fleetOpen) {
+        FleetScreen(onBack = { fleetOpen = false })
+        return
+    }
 
     Column(Modifier.fillMaxSize()) {
         Text("Настройки", color = Fg, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
@@ -261,6 +288,14 @@ private fun SettingsScreen() {
             color = Subtle,
             fontSize = 13.sp
         )
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = { fleetOpen = true },
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Surface2, contentColor = Fg)
+        ) {
+            Text("Справочник", color = Fg, fontWeight = FontWeight.Bold)
+        }
         Spacer(Modifier.weight(1f))
         Text(
             "Автор ПО - Telegram",
@@ -292,7 +327,7 @@ private fun SettingsScreen() {
                     }
                 }
             },
-            enabled = !backingUp && !clearing,
+            enabled = !backingUp && !restoring && !clearing,
             modifier = Modifier.fillMaxWidth().height(48.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = Surface2,
@@ -305,7 +340,23 @@ private fun SettingsScreen() {
         }
         backupMessage?.let {
             Spacer(Modifier.height(8.dp))
-            Text(it, color = if (it.startsWith("Архив")) Ok else Danger, fontSize = 14.sp)
+            Text(it, color = if (it.startsWith("Архив") || it.startsWith("Восстановлено")) Ok else Danger, fontSize = 14.sp)
+        }
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = {
+                restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream"))
+            },
+            enabled = !backingUp && !restoring && !clearing,
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Surface2,
+                contentColor = Fg,
+                disabledContainerColor = Surface2,
+                disabledContentColor = Muted
+            )
+        ) {
+            Text(if (restoring) "Восстановление…" else "Восстановить", color = Fg, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(8.dp))
         Button(

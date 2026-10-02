@@ -1,4 +1,4 @@
-var HEADERS = ["ДАТА", "НОМЕР", "ЗАМЕТКА", "НЕСОГЛАСОВАННЫЙ ВЫЕЗД", "ПУТЬ К ФОТО", "ID"];
+var HEADERS = ["ДАТА", "НОМЕР", "НОМЕР ТЯГАЧА", "ФИО", "ЗАМЕТКА", "НЕСОГЛАСОВАННЫЙ ВЫЕЗД", "ПУТЬ К ФОТО", "ID"];
 
 function authorizeDrive() {
   var folder = photosFolder_();
@@ -54,22 +54,40 @@ function sheet_() {
   try {
     sheet.setName("TransportnyyeTekhnologii");
   } catch (ignore) {}
+  ensureHeaders_(sheet);
+  return sheet;
+}
+
+function ensureHeaders_(sheet) {
   if (sheet.getLastRow() === 0) {
     sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]).setFontWeight("bold");
-    sheet.setColumnWidth(1, 160);
-    sheet.setColumnWidth(2, 120);
-    sheet.setColumnWidth(3, 180);
-    sheet.setColumnWidth(4, 220);
-    sheet.setColumnWidth(5, 280);
-    sheet.hideColumns(6);
+  } else {
+    var lastCol = Math.max(sheet.getLastColumn(), 1);
+    var header = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (value) {
+      return String(value || "").trim().toUpperCase();
+    });
+    if (header.indexOf("НОМЕР ТЯГАЧА") < 0 && header.indexOf("НОМЕР") === 1) {
+      sheet.insertColumnsAfter(2, 2);
+    }
+    sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]).setFontWeight("bold");
   }
-  return sheet;
+  sheet.setColumnWidth(1, 160);
+  sheet.setColumnWidth(2, 130);
+  sheet.setColumnWidth(3, 140);
+  sheet.setColumnWidth(4, 220);
+  sheet.setColumnWidth(5, 180);
+  sheet.setColumnWidth(6, 200);
+  sheet.setColumnWidth(7, 280);
+  try {
+    sheet.showColumns(1, Math.max(sheet.getMaxColumns(), HEADERS.length));
+  } catch (ignore) {}
+  sheet.hideColumns(8);
 }
 
 function clearSheet_(sheet) {
   var last = sheet.getLastRow();
   if (last > 1) {
-    var links = sheet.getRange(2, 5, last - 1, 1).getValues();
+    var links = sheet.getRange(2, 7, last - 1, 1).getValues();
     for (var i = 0; i < links.length; i++) trashDriveFile_(links[i][0]);
     sheet.deleteRows(2, last - 1);
   }
@@ -78,14 +96,14 @@ function clearSheet_(sheet) {
 function statusRows_(sheet) {
   var last = sheet.getLastRow();
   if (last < 2) return [];
-  var values = sheet.getRange(2, 1, last - 1, 6).getValues();
+  var values = sheet.getRange(2, 1, last - 1, HEADERS.length).getValues();
   var rows = [];
   for (var i = 0; i < values.length; i++) {
     var date = values[i][0];
     var number = String(values[i][1] || "");
-    var note = String(values[i][2] || "");
-    var photo = String(values[i][4] || "");
-    var id = String(values[i][5] || "");
+    var note = String(values[i][4] || "");
+    var photo = String(values[i][6] || "");
+    var id = String(values[i][7] || "");
     if (!id) continue;
     rows.push({
       id: id,
@@ -130,7 +148,7 @@ function trashDriveFile_(value) {
 function existingIds_(sheet) {
   var last = sheet.getLastRow();
   if (last < 2) return [];
-  var values = sheet.getRange(2, 6, last - 1, 1).getValues();
+  var values = sheet.getRange(2, 8, last - 1, 1).getValues();
   var ids = [];
   for (var i = 0; i < values.length; i++) {
     var id = String(values[i][0] || "");
@@ -151,6 +169,8 @@ function renameRows_(sheet, rows) {
       cell.setValue(number);
       changed++;
     }
+    if (row.tractor !== undefined) sheet.getRange(index[id], 3).setValue(String(row.tractor || ""));
+    if (row.driver !== undefined) sheet.getRange(index[id], 4).setValue(String(row.driver || ""));
   });
   return changed;
 }
@@ -171,8 +191,10 @@ function appendRows_(sheet, rows) {
     var photoUrl = folder ? savePhoto_(row, folder) : "";
     if (typeof index[id] === "number") {
       if (row.number) sheet.getRange(index[id], 2).setValue(String(row.number));
+      if (row.tractor !== undefined) sheet.getRange(index[id], 3).setValue(String(row.tractor || ""));
+      if (row.driver !== undefined) sheet.getRange(index[id], 4).setValue(String(row.driver || ""));
       if (photoUrl) {
-        sheet.getRange(index[id], 5).setValue(photoUrl);
+        sheet.getRange(index[id], 7).setValue(photoUrl);
         updated++;
       } else {
         skipped++;
@@ -187,6 +209,8 @@ function appendRows_(sheet, rows) {
     toAdd.push([
       row.date || "",
       row.number || "",
+      row.tractor || "",
+      row.driver || "",
       row.note || "",
       row.unauthorized ? "ДА" : "",
       photoUrl,
@@ -222,7 +246,7 @@ function findRow_(sheet, id, number, date) {
 function removeRow_(sheet, id, number, date) {
   var row = findRow_(sheet, id, number, date);
   if (!row) return false;
-  trashDriveFile_(sheet.getRange(row, 5).getValue());
+  trashDriveFile_(sheet.getRange(row, 7).getValue());
   sheet.deleteRow(row);
   return true;
 }
@@ -236,9 +260,11 @@ function updateRow_(sheet, body) {
   );
   if (!row) return false;
   sheet.getRange(row, 2).setValue(String(body.number || ""));
-  sheet.getRange(row, 3).setValue(String(body.note || ""));
+  sheet.getRange(row, 3).setValue(String(body.tractor || ""));
+  sheet.getRange(row, 4).setValue(String(body.driver || ""));
+  sheet.getRange(row, 5).setValue(String(body.note || ""));
   var mark = body.unauthorized ? "ДА" : "";
-  var cell = sheet.getRange(row, 4);
+  var cell = sheet.getRange(row, 6);
   cell.setValue(mark);
   if (mark) {
     cell.setBackground("#e23b3b");
@@ -265,7 +291,7 @@ function rowIndexById_(sheet) {
   var last = sheet.getLastRow();
   var index = {};
   if (last < 2) return index;
-  var ids = sheet.getRange(2, 6, last - 1, 1).getValues();
+  var ids = sheet.getRange(2, 8, last - 1, 1).getValues();
   for (var i = 0; i < ids.length; i++) {
     var id = String(ids[i][0] || "");
     if (id) index[id] = i + 2;
@@ -308,12 +334,12 @@ function formatSheet_(sheet) {
   header.setFontWeight("bold");
   header.setHorizontalAlignment("center");
   header.setVerticalAlignment("middle");
-  sheet.setColumnWidth(5, 360);
+  sheet.setColumnWidth(7, 360);
   if (last < 2) return;
   var data = sheet.getRange(2, 1, last - 1, HEADERS.length);
   data.setHorizontalAlignment("left");
   data.setVerticalAlignment("middle");
-  var flags = sheet.getRange(2, 4, last - 1, 1).getValues();
+  var flags = sheet.getRange(2, 6, last - 1, 1).getValues();
   var backgrounds = [];
   var colors = [];
   for (var i = 0; i < flags.length; i++) {
@@ -321,7 +347,7 @@ function formatSheet_(sheet) {
     backgrounds.push([mark ? "#e23b3b" : "#ffffff"]);
     colors.push([mark ? "#ffffff" : "#000000"]);
   }
-  var flagRange = sheet.getRange(2, 4, last - 1, 1);
+  var flagRange = sheet.getRange(2, 6, last - 1, 1);
   flagRange.setBackgrounds(backgrounds);
   flagRange.setFontColors(colors);
   if (flags.length) flagRange.setFontWeight("bold");

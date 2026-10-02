@@ -47,6 +47,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.russianplatescanner.PlateApp
 import com.example.russianplatescanner.ui.theme.*
+import com.example.russianplatescanner.util.FleetBook
+import com.example.russianplatescanner.util.correctPlate
 import com.example.russianplatescanner.util.formatPlateUi
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -499,8 +501,19 @@ private fun ResultDialog(
     onRetry: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    var editableNumber by remember { mutableStateOf(number?.let { formatPlateUi(it) } ?: "") }
+    val crew = FleetBook.match(number.orEmpty())
+    val tractorLabel = crew?.let { FleetBook.label(it.tractor, canonical = false) }.orEmpty()
+    val scannedLabel = number?.let { formatPlateUi(it) }.orEmpty()
+    val initialNumber = if (
+        tractorLabel.isNotBlank() && correctPlate(tractorLabel) != correctPlate(scannedLabel)
+    ) {
+        tractorLabel
+    } else {
+        scannedLabel
+    }
+    var editableNumber by remember(number) { mutableStateOf(initialNumber) }
     var note by remember { mutableStateOf("") }
+    val shownCrew = FleetBook.match(editableNumber) ?: crew
     val duplicate = recentHit(editableNumber)
     val fieldColors = OutlinedTextFieldDefaults.colors(
         focusedTextColor = Fg,
@@ -546,6 +559,22 @@ private fun ResultDialog(
                     .fillMaxWidth()
                     .height(88.dp)
             )
+            shownCrew?.let { known ->
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Справочник: ${FleetBook.label(known.tractor, canonical = false)}" +
+                        (known.trailer.takeIf { it.isNotBlank() }?.let { " · ${FleetBook.label(it, canonical = false)}" } ?: "") +
+                        (known.driver.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
+                    color = Ok,
+                    fontSize = 14.sp
+                )
+                val knownTractor = FleetBook.label(known.tractor, canonical = false)
+                if (correctPlate(editableNumber) != correctPlate(knownTractor)) {
+                    TextButton(onClick = { editableNumber = knownTractor }) {
+                        Text("Подставить $knownTractor", color = Accent)
+                    }
+                }
+            }
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = note,
