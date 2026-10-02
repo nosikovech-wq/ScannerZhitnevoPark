@@ -16,11 +16,14 @@ class PlateRecognizer {
 
     suspend fun recognize(image: InputImage): RecognitionResult {
         val visionText = recognizer.process(image).await()
-        val rawText = visionText.text
-        val found = readPlate(rawText)
+        val ordered = visionText.textBlocks
+            .flatMap { it.lines }
+            .sortedWith(compareBy({ it.boundingBox?.top ?: 0 }, { it.boundingBox?.left ?: 0 }))
+            .joinToString("\n") { it.text }
+        val found = readPlate(ordered) ?: readPlate(visionText.text)
         return RecognitionResult(
             number = found,
-            rawText = rawText,
+            rawText = visionText.text,
             confidence = if (found != null) 0.85f else 0f
         )
     }

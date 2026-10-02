@@ -47,6 +47,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.russianplatescanner.PlateApp
 import com.example.russianplatescanner.ui.theme.*
+import com.example.russianplatescanner.util.formatPlateUi
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -246,7 +247,7 @@ fun CameraScreen(
 
             liveNumber?.let { number ->
                 Text(
-                    number,
+                    formatPlateUi(number),
                     color = if (todayHit != null) Danger else Fg,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
@@ -303,7 +304,7 @@ fun CameraScreen(
                     letterSpacing = 1.4.sp
                 )
                 Text(
-                    number,
+                    formatPlateUi(number),
                     color = if (hit != null) Danger else Fg,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
@@ -499,7 +500,7 @@ private fun ResultDialog(
     onRetry: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    var editableNumber by remember { mutableStateOf(number ?: "") }
+    var editableNumber by remember { mutableStateOf(number?.let { formatPlateUi(it) } ?: "") }
     var note by remember { mutableStateOf("") }
     val duplicate = recentHit(editableNumber)
     val fieldColors = OutlinedTextFieldDefaults.colors(
