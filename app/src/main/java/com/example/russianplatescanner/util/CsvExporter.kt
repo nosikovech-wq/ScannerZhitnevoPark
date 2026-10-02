@@ -19,7 +19,7 @@ object CsvExporter {
 
     fun share(context: Context, plates: List<PlateEntity>) {
         val file = File(context.cacheDir, "TransportnyyeTekhnologii.xls")
-        file.writeText(toExcelXml(plates, FleetBook.load(context)), Charsets.UTF_8)
+        file.writeText(toExcelXml(plates, FleetBook.load()), Charsets.UTF_8)
         val uri = FileProvider.getUriForFile(
             context,
             "${context.packageName}.files",
