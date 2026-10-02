@@ -68,11 +68,7 @@ object CsvExporter {
         fleet: Map<String, Crew>
     ): String {
         val days = daysInMonth(year, month)
-        val byTractor = plates.groupBy { plate ->
-            val scanned = correctPlate(plate.number)
-            val crew = fleet[scanned]
-            crew?.tractor?.let { correctPlate(it) }.orEmpty().ifBlank { scanned }
-        }
+        val byTractor = plates.groupBy { plate -> FleetBook.resolve(plate.number) }
         val order = byTractor.keys.sortedBy { formatTractor(it) }
         return buildString {
             append("""<Worksheet ss:Name="${xml(months[month] + " " + year)}"><Table>""")
@@ -93,21 +89,23 @@ object CsvExporter {
             append("</Row>")
             order.forEach { tractorKey ->
                 val visits = byTractor.getValue(tractorKey)
-                val crew = visits.firstNotNullOfOrNull { fleet[correctPlate(it.number)] }
+                val crew = fleet[tractorKey]
                 val byDay = visits.groupBy { dayOf(it.timestamp) }
                 append("<Row>")
                 append("""<Cell ss:StyleID="Plate"><Data ss:Type="String">${xml(formatTractor(crew?.tractor?.ifBlank { null } ?: tractorKey))}</Data></Cell>""")
                 append(textCell(crew?.trailer?.let { formatTractor(it) }.orEmpty()))
                 append(textCell(crew?.driver.orEmpty()))
                 for (day in 1..days) {
-                    val first = byDay[day]?.minByOrNull { it.timestamp }
-                    if (first == null) {
-                        append("<Cell/>")
-                    } else {
-                        val fraction = timeFraction(first.timestamp)
-                        append(
-                            """<Cell ss:StyleID="Time"><Data ss:Type="Number">${"%.8f".format(Locale.US, fraction)}</Data></Cell>"""
-                        )
+                    val times = byDay[day].orEmpty().sortedBy { it.timestamp }
+                    when (times.size) {
+                        0 -> append("<Cell/>")
+                        1 -> {
+                            val fraction = timeFraction(times.first().timestamp)
+                            append(
+                                """<Cell ss:StyleID="Time"><Data ss:Type="Number">${"%.8f".format(Locale.US, fraction)}</Data></Cell>"""
+                            )
+                        }
+                        else -> append(textCell(times.joinToString(", ") { clock(it.timestamp) }))
                     }
                 }
                 append("</Row>")
@@ -145,6 +143,17 @@ object CsvExporter {
         val calendar = Calendar.getInstance()
         calendar.timeInMillis = timestamp
         return calendar.get(Calendar.DAY_OF_MONTH)
+    }
+
+    private fun clock(timestamp: Long): String {
+        val calendar = Calendar.getInstance()
+        calendar.timeInMillis = timestamp
+        return "%02d:%02d:%02d".format(
+            Locale.US,
+            calendar.get(Calendar.HOUR_OF_DAY),
+            calendar.get(Calendar.MINUTE),
+            calendar.get(Calendar.SECOND)
+        )
     }
 
     private fun timeFraction(timestamp: Long): Double {

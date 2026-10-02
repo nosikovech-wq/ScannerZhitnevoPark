@@ -83,7 +83,33 @@ object FleetBook {
 Х771АХ 761;СЕ5057 61;Гнездилов Василий Васильевич
 """
 
-    fun load(): Map<String, Crew> {
+    fun load(): Map<String, Crew> = byPlate
+
+    /** Exact fleet plate, or the same plate body with a region that only missed the first digit. */
+    fun resolve(raw: String): String {
+        val normalized = correctPlate(raw)
+        if (normalized.isBlank()) return normalized
+        byPlate[normalized]?.let { crew ->
+            return correctPlate(crew.tractor).ifBlank { normalized }
+        }
+        val body = if (normalized.length >= 8) normalized.take(6) else return normalized
+        val region = normalized.drop(6)
+        val matches = tractors.filter { tractor ->
+            val fleetRegion = tractor.drop(6)
+            tractor.startsWith(body) &&
+                fleetRegion.length == region.length + 1 &&
+                fleetRegion.endsWith(region)
+        }
+        return if (matches.size == 1) matches.first() else normalized
+    }
+
+    private val byPlate: Map<String, Crew> by lazy { buildIndex() }
+
+    private val tractors: List<String> by lazy {
+        byPlate.values.map { correctPlate(it.tractor) }.filter { it.length >= 8 }.distinct()
+    }
+
+    private fun buildIndex(): Map<String, Crew> {
         val map = LinkedHashMap<String, Crew>()
         parse(table).forEach { crew ->
             val tractor = correctPlate(crew.tractor)

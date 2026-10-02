@@ -6,9 +6,10 @@ import androidx.lifecycle.viewModelScope
 import android.content.Context
 import com.example.russianplatescanner.data.PlateDao
 import com.example.russianplatescanner.data.PlateEntity
+import com.example.russianplatescanner.util.FleetBook
 import com.example.russianplatescanner.util.PhotoStorage
 import com.example.russianplatescanner.util.SheetSync
-import com.example.russianplatescanner.util.correctPlate
+import com.example.russianplatescanner.util.formatPlateUi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -57,24 +58,30 @@ class ListViewModel(
         onDone: (String) -> Unit
     ) {
         viewModelScope.launch {
-            val normalized = correctPlate(number)
-            if (normalized.isBlank()) {
+            val canonical = FleetBook.resolve(number)
+            if (canonical.isBlank()) {
                 onDone("Номер не распознан")
                 return@launch
             }
+            val joined = allPlates.any { it.id != plate.id && FleetBook.resolve(it.number) == canonical }
             val updated = plate.copy(
-                number = normalized,
+                number = canonical,
                 note = note.trim().ifBlank { null },
                 unauthorizedExit = unauthorized
             )
             plateDao.update(updated)
+            val saved = if (joined) {
+                "Запись добавлена к номеру ${formatPlateUi(canonical)}"
+            } else {
+                "Сохранено на телефоне"
+            }
             val url = SheetSync.url(appContext)
             if (!url.startsWith("https://") || !plate.uploaded) {
-                onDone("Сохранено на телефоне")
+                onDone(saved)
                 return@launch
             }
             val synced = runCatching { SheetSync.update(url, updated, plate.number) }.getOrDefault(false)
-            onDone(if (synced) "Сохранено и обновлено в таблице" else "Сохранено на телефоне, таблица не обновлена")
+            onDone(if (synced) "$saved, таблица обновлена" else saved)
         }
     }
 
