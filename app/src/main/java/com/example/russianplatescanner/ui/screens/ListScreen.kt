@@ -86,6 +86,7 @@ fun ListScreen(
     var plateToDelete by remember { mutableStateOf<PlateEntity?>(null) }
     var plateToEdit by remember { mutableStateOf<PlateEntity?>(null) }
     var editMessage by remember { mutableStateOf<String?>(null) }
+    var windowConflict by remember { mutableStateOf<Pair<PlateEntity, String>?>(null) }
     var deleting by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -336,10 +337,46 @@ fun ListScreen(
             plate = target,
             onDismiss = { plateToEdit = null },
             onSave = { number, note, unauthorized ->
-                viewModel.update(target, number, note, unauthorized) { message ->
-                    editMessage = message
-                    plateToEdit = null
+                viewModel.update(target, number, note, unauthorized) { result ->
+                    when (result) {
+                        is EditResult.Saved -> {
+                            editMessage = result.message
+                            plateToEdit = null
+                        }
+                        is EditResult.InsideWindow -> {
+                            val whenText = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault())
+                                .format(Date(result.previousAt))
+                            windowConflict = target to (
+                                "Номер ${formatPlateUi(result.number)} уже поставлен $whenText. " +
+                                    "Между записями меньше 22 часов, поэтому время ошибочного номера не переносится. " +
+                                    "Ошибочная запись будет удалена."
+                                )
+                            plateToEdit = null
+                        }
+                    }
                 }
+            }
+        )
+    }
+
+    windowConflict?.let { (wrong, message) ->
+        AlertDialog(
+            onDismissRequest = { windowConflict = null },
+            containerColor = Surface,
+            title = { Text("Номер уже в базе", color = Fg) },
+            text = { Text(message, color = Fg) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        windowConflict = null
+                        viewModel.delete(wrong) {
+                            editMessage = "Ошибочная запись удалена"
+                        }
+                    }
+                ) { Text("Удалить", color = Danger) }
+            },
+            dismissButton = {
+                TextButton(onClick = { windowConflict = null }) { Text("Отмена", color = Muted) }
             }
         )
     }

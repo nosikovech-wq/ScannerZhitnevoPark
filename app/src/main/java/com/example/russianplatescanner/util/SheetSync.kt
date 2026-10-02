@@ -12,6 +12,7 @@ import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.abs
 
 object SheetSync {
     private const val PREFS = "sheet_sync"
@@ -97,7 +98,7 @@ object SheetSync {
                         report(cancelled)
                         return@withContext cancelled
                     }
-                    val result = append(url, chunk, fmt)
+                    val result = append(url, chunk, plates, fmt)
                     onAccepted(chunk.map { it.recordKey() })
                     sent += chunk.size
                     inserted += result.first
@@ -176,6 +177,17 @@ object SheetSync {
         }
     }
 
+    private fun numberForSheet(plate: PlateEntity, plates: List<PlateEntity>): String {
+        val resolved = FleetBook.resolve(plate.number)
+        val stored = correctPlate(plate.number)
+        val blocked = stored != resolved && plates.any { other ->
+            other.id != plate.id &&
+                correctPlate(other.number) == resolved &&
+                abs(other.timestamp - plate.timestamp) < REPEAT_LOCK_MS
+        }
+        return if (blocked) FleetBook.label(stored, canonical = false) else FleetBook.label(plate.number)
+    }
+
     private fun syncNumbers(url: String, plates: List<PlateEntity>) {
         if (plates.isEmpty()) return
         val rows = JSONArray()
@@ -183,7 +195,7 @@ object SheetSync {
             rows.put(
                 JSONObject()
                     .put("id", plate.recordKey())
-                    .put("number", FleetBook.label(plate.number))
+                    .put("number", numberForSheet(plate, plates))
             )
         }
         post(url, JSONObject().put("action", "numbers").put("rows", rows).toString())
@@ -192,6 +204,7 @@ object SheetSync {
     private fun append(
         url: String,
         chunk: List<PlateEntity>,
+        plates: List<PlateEntity>,
         fmt: SimpleDateFormat
     ): Pair<Int, Int> {
         val rows = JSONArray()
@@ -201,7 +214,7 @@ object SheetSync {
                 JSONObject()
                     .put("id", plate.recordKey())
                     .put("date", fmt.format(Date(plate.timestamp)))
-                    .put("number", FleetBook.label(plate.number))
+                    .put("number", numberForSheet(plate, plates))
                     .put("note", plate.note ?: "")
                     .put("unauthorized", plate.unauthorizedExit)
                     .put("photoData", if (photo.isEmpty()) "" else Base64.encodeToString(photo, Base64.NO_WRAP))

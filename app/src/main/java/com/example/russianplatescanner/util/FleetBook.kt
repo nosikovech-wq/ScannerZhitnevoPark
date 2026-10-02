@@ -103,8 +103,8 @@ object FleetBook {
         return if (matches.size == 1) matches.first() else normalized
     }
 
-    fun label(raw: String): String {
-        val number = resolve(raw)
+    fun label(raw: String, canonical: Boolean = true): String {
+        val number = if (canonical) resolve(raw) else correctPlate(raw)
         Regex("^([АВЕКМНОРСТУХ]\\d{3}[АВЕКМНОРСТУХ]{2})(\\d{2,3})$").find(number)?.let {
             return "${it.groupValues[1]} ${it.groupValues[2]}"
         }

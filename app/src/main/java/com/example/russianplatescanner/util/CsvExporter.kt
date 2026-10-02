@@ -8,6 +8,7 @@ import java.io.File
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
+import kotlin.math.abs
 
 object CsvExporter {
     @Suppress("SpellCheckingInspection")
@@ -68,7 +69,7 @@ object CsvExporter {
         fleet: Map<String, Crew>
     ): String {
         val days = daysInMonth(year, month)
-        val byTractor = plates.groupBy { plate -> FleetBook.resolve(plate.number) }
+        val byTractor = plates.groupBy { plate -> exportKey(plate, plates) }
         val order = byTractor.keys.sortedBy { formatTractor(it) }
         return buildString {
             append("""<Worksheet ss:Name="${xml(months[month] + " " + year)}"><Table>""")
@@ -112,6 +113,18 @@ object CsvExporter {
             }
             append("</Table></Worksheet>")
         }
+    }
+
+    private fun exportKey(plate: PlateEntity, plates: List<PlateEntity>): String {
+        val resolved = FleetBook.resolve(plate.number)
+        val stored = correctPlate(plate.number)
+        if (stored == resolved) return resolved
+        val blocked = plates.any { other ->
+            other.id != plate.id &&
+                correctPlate(other.number) == resolved &&
+                abs(other.timestamp - plate.timestamp) < REPEAT_LOCK_MS
+        }
+        return if (blocked) stored else resolved
     }
 
     private fun textCell(value: String): String {

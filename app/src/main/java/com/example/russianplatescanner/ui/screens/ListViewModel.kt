@@ -8,8 +8,10 @@ import com.example.russianplatescanner.data.PlateDao
 import com.example.russianplatescanner.data.PlateEntity
 import com.example.russianplatescanner.util.FleetBook
 import com.example.russianplatescanner.util.PhotoStorage
+import com.example.russianplatescanner.util.REPEAT_LOCK_MS
 import com.example.russianplatescanner.util.SheetSync
 import com.example.russianplatescanner.util.formatPlateUi
+import kotlin.math.abs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -55,15 +57,24 @@ class ListViewModel(
         number: String,
         note: String,
         unauthorized: Boolean,
-        onDone: (String) -> Unit
+        onDone: (EditResult) -> Unit
     ) {
         viewModelScope.launch {
             val canonical = FleetBook.resolve(number)
             if (canonical.isBlank()) {
-                onDone("Номер не распознан")
+                onDone(EditResult.Saved("Номер не распознан"))
                 return@launch
             }
-            val joined = allPlates.any { it.id != plate.id && FleetBook.resolve(it.number) == canonical }
+            val sameNumber = FleetBook.resolve(plate.number) == canonical
+            val nearby = allPlates
+                .filter { it.id != plate.id && FleetBook.resolve(it.number) == canonical }
+                .filter { abs(it.timestamp - plate.timestamp) < REPEAT_LOCK_MS }
+                .minByOrNull { abs(it.timestamp - plate.timestamp) }
+            if (!sameNumber && nearby != null) {
+                onDone(EditResult.InsideWindow(canonical, nearby.timestamp))
+                return@launch
+            }
+            val joined = !sameNumber && allPlates.any { it.id != plate.id && FleetBook.resolve(it.number) == canonical }
             val updated = plate.copy(
                 number = canonical,
                 note = note.trim().ifBlank { null },
@@ -77,11 +88,11 @@ class ListViewModel(
             }
             val url = SheetSync.url(appContext)
             if (!url.startsWith("https://") || !plate.uploaded) {
-                onDone(saved)
+                onDone(EditResult.Saved(saved))
                 return@launch
             }
             val synced = runCatching { SheetSync.update(url, updated, plate.number) }.getOrDefault(false)
-            onDone(if (synced) "$saved, таблица обновлена" else saved)
+            onDone(EditResult.Saved(if (synced) "$saved, таблица обновлена" else saved))
         }
     }
 
@@ -101,6 +112,11 @@ class ListViewModel(
         _plates.value = allPlates
         _pendingUpload.value = allPlates.count { !it.uploaded }
     }
+}
+
+sealed class EditResult {
+    data class Saved(val message: String) : EditResult()
+    data class InsideWindow(val number: String, val previousAt: Long) : EditResult()
 }
 
 class ListViewModelFactory(
