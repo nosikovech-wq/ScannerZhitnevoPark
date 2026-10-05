@@ -10,6 +10,7 @@ import com.example.russianplatescanner.data.PlateDao
 import com.example.russianplatescanner.data.PlateEntity
 import com.example.russianplatescanner.util.GuideCrop
 import com.example.russianplatescanner.util.PhotoStorage
+import com.example.russianplatescanner.util.ParkSync
 import com.example.russianplatescanner.util.PlateRecognizer
 import com.example.russianplatescanner.util.startOfLocalDay
 import com.example.russianplatescanner.util.startOfLocalMonth
@@ -248,14 +249,15 @@ class CameraViewModel(
                             SaveResult.Duplicate(existing)
                         } else {
                             val path = PhotoStorage.savePhoto(appContext, bitmap)
-                            plateDao.insert(
-                                PlateEntity(
-                                    number = normalized,
-                                    photoPath = path,
-                                    note = note?.trim()?.ifBlank { null },
-                                    unauthorizedExit = unauthorized && existing != null
-                                )
+                            val plate = PlateEntity(
+                                number = normalized,
+                                photoPath = path,
+                                note = note?.trim()?.ifBlank { null },
+                                unauthorizedExit = unauthorized && existing != null,
+                                pendingSync = true
                             )
+                            plateDao.insert(plate)
+                            runCatching { ParkSync.pushOne(appContext, plateDao, plate) }
                             SaveResult.Saved
                         }
                     }

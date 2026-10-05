@@ -7,16 +7,19 @@ import android.content.Context
 import com.example.russianplatescanner.data.PlateDao
 import com.example.russianplatescanner.data.PlateEntity
 import com.example.russianplatescanner.util.FleetBook
+import com.example.russianplatescanner.util.ParkSync
 import com.example.russianplatescanner.util.PhotoStorage
 import com.example.russianplatescanner.util.REPEAT_LOCK_MS
 import com.example.russianplatescanner.util.SheetSync
 import com.example.russianplatescanner.util.formatPlateUi
 import kotlin.math.abs
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -78,9 +81,11 @@ class ListViewModel(
             val updated = plate.copy(
                 number = canonical,
                 note = note.trim().ifBlank { null },
-                unauthorizedExit = unauthorized
+                unauthorizedExit = unauthorized,
+                pendingSync = true
             )
             plateDao.update(updated)
+            runCatching { withContext(Dispatchers.IO) { ParkSync.pushOne(appContext, plateDao, updated) } }
             val saved = if (joined) {
                 "Запись добавлена к номеру ${formatPlateUi(canonical)}"
             } else {
@@ -100,6 +105,7 @@ class ListViewModel(
         viewModelScope.launch {
             PhotoStorage.deletePhoto(plate.photoPath)
             plateDao.delete(plate)
+            ParkSync.rememberDelete(appContext, plate.recordKey())
             val url = SheetSync.url(appContext)
             if (url.startsWith("https://")) {
                 runCatching { SheetSync.remove(url, plate) }

@@ -31,6 +31,15 @@ interface PlateDao {
     @Query("SELECT * FROM plates WHERE timestamp >= :since")
     suspend fun recordedSince(since: Long): List<PlateEntity>
 
+    @Query("SELECT * FROM plates WHERE uid = :uid LIMIT 1")
+    suspend fun findByUid(uid: String): PlateEntity?
+
+    @Query("SELECT * FROM plates WHERE pendingSync = 1")
+    suspend fun pending(): List<PlateEntity>
+
+    @Query("UPDATE plates SET pendingSync = 0 WHERE uid = :uid")
+    suspend fun markSynced(uid: String)
+
     @Query("SELECT uid FROM plates")
     suspend fun allUids(): List<String>
 

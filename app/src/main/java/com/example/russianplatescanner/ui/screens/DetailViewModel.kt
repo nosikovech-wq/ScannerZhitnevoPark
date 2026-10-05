@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.russianplatescanner.data.PlateDao
 import com.example.russianplatescanner.data.PlateEntity
+import com.example.russianplatescanner.util.ParkSync
 import com.example.russianplatescanner.util.PhotoStorage
 import com.example.russianplatescanner.util.SheetSync
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,6 +32,7 @@ class DetailViewModel(
         viewModelScope.launch {
             PhotoStorage.deletePhoto(plate.photoPath)
             plateDao.delete(plate)
+            ParkSync.rememberDelete(appContext, plate.recordKey())
             val url = SheetSync.url(appContext)
             if (url.startsWith("https://")) {
                 runCatching { SheetSync.remove(url, plate) }

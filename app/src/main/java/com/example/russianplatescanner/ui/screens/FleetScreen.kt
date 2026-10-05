@@ -25,7 +25,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
+import com.example.russianplatescanner.util.ParkSync
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -43,6 +47,8 @@ import com.example.russianplatescanner.util.FleetBook
 @Composable
 fun FleetScreen(onBack: () -> Unit) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val canEdit = ParkSync.role(context) != "operator"
     var rows by remember { mutableStateOf(FleetBook.crews()) }
     var editing by remember { mutableStateOf<Crew?>(null) }
     var creating by remember { mutableStateOf(false) }
@@ -50,6 +56,9 @@ fun FleetScreen(onBack: () -> Unit) {
     fun persist(next: List<Crew>) {
         FleetBook.saveLocal(context, next.sortedBy { it.tractor })
         rows = FleetBook.crews()
+        if (ParkSync.isAdmin(context)) {
+            scope.launch(Dispatchers.IO) { runCatching { ParkSync.pushFleet(context) } }
+        }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -61,7 +70,11 @@ fun FleetScreen(onBack: () -> Unit) {
             Text("Справочник", color = Fg, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
         }
         Text(
-            "Номер тягача, прицеп и ФИО. Файл хранится на этом телефоне.",
+            if (ParkSync.loggedIn(context)) {
+                "Справочник общий. Меняет только администратор, остальные телефоны получают его сами."
+            } else {
+                "Номер тягача, прицеп и ФИО. Пока сервер не подключён, файл только на этом телефоне."
+            },
             color = Muted,
             fontSize = 13.sp
         )
@@ -74,7 +87,7 @@ fun FleetScreen(onBack: () -> Unit) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { editing = crew }
+                        .clickable(enabled = canEdit) { editing = crew }
                         .padding(vertical = 8.dp)
                 ) {
                     Text(
@@ -94,13 +107,15 @@ fun FleetScreen(onBack: () -> Unit) {
                 }
             }
         }
-        Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = { creating = true },
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Ok, contentColor = AccentFg)
-        ) {
-            Text("Добавить", color = AccentFg, fontWeight = FontWeight.Bold)
+        if (canEdit) {
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = { creating = true },
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Ok, contentColor = AccentFg)
+            ) {
+                Text("Добавить", color = AccentFg, fontWeight = FontWeight.Bold)
+            }
         }
     }
 

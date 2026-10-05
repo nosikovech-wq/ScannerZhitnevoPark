@@ -49,6 +49,7 @@ import com.example.russianplatescanner.ui.theme.Subtle
 import com.example.russianplatescanner.ui.theme.Surface
 import com.example.russianplatescanner.ui.theme.Surface2
 import com.example.russianplatescanner.util.BackupStore
+import com.example.russianplatescanner.util.ParkSync
 import com.example.russianplatescanner.util.PhotoStorage
 import com.example.russianplatescanner.util.SheetSync
 import kotlinx.coroutines.Dispatchers
@@ -200,7 +201,7 @@ private fun HelpScreen() {
         )
         HelpCard(
             "Настройки",
-            "Шестерёнка справа от названия. Там адрес скрипта, справочник тягачей, «Бэкап» и «Восстановить». «Очистить базу» спрашивает пароль и удаляет записи, фото и онлайн-таблицу."
+            "Шестерёнка справа от названия. Там адрес общего сервера, вход, учётки администратора и загрузка старого бэкапа на сервер. Справочник на сервере меняет только администратор. «Очистить базу» по-прежнему чистит этот телефон и Google-таблицу."
         )
         Spacer(Modifier.height(8.dp))
     }
@@ -235,6 +236,13 @@ private fun SettingsScreen() {
     var restoring by remember { mutableStateOf(false) }
     var backupMessage by remember { mutableStateOf<String?>(null) }
     var fleetOpen by remember { mutableStateOf(false) }
+    var usersOpen by remember { mutableStateOf(false) }
+    var serverUrl by remember { mutableStateOf(ParkSync.url(context)) }
+    var serverUser by remember { mutableStateOf("") }
+    var serverPassword by remember { mutableStateOf("") }
+    var serverMessage by remember { mutableStateOf<String?>(null) }
+    var sessionName by remember { mutableStateOf(ParkSync.username(context)) }
+    var sessionRole by remember { mutableStateOf(ParkSync.role(context)) }
     val scope = rememberCoroutineScope()
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -253,13 +261,147 @@ private fun SettingsScreen() {
             }
         }
     }
+    val serverImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            serverMessage = "Загрузка бэкапа на сервер…"
+            try {
+                val bytes = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Не удалось открыть архив")
+                }
+                serverMessage = withContext(Dispatchers.IO) { ParkSync.importBackup(context, bytes) }
+            } catch (e: Exception) {
+                serverMessage = e.message ?: "Не удалось загрузить бэкап"
+            }
+        }
+    }
+    if (usersOpen) {
+        UsersScreen(onBack = { usersOpen = false })
+        return
+    }
     if (fleetOpen) {
         FleetScreen(onBack = { fleetOpen = false })
         return
     }
 
-    Column(Modifier.fillMaxSize()) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+    ) {
         Text("Настройки", color = Fg, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+        Spacer(Modifier.height(12.dp))
+        Text("Общий сервер", color = Muted, fontSize = 14.sp)
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = serverUrl,
+            onValueChange = { serverUrl = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            placeholder = { Text("http://IP-сервера:8787") },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Fg,
+                unfocusedTextColor = Fg,
+                focusedBorderColor = Accent,
+                unfocusedBorderColor = Border,
+                cursorColor = Fg,
+                focusedContainerColor = Surface,
+                unfocusedContainerColor = Surface
+            )
+        )
+        if (sessionName.isBlank()) {
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = serverUser,
+                onValueChange = { serverUser = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                placeholder = { Text("Логин") },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Fg,
+                    unfocusedTextColor = Fg,
+                    cursorColor = Fg,
+                    focusedBorderColor = Accent,
+                    unfocusedBorderColor = Border,
+                    focusedContainerColor = Surface,
+                    unfocusedContainerColor = Surface
+                )
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = serverPassword,
+                onValueChange = { serverPassword = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                placeholder = { Text("Пароль") },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Fg,
+                    unfocusedTextColor = Fg,
+                    cursorColor = Fg,
+                    focusedBorderColor = Accent,
+                    unfocusedBorderColor = Border,
+                    focusedContainerColor = Surface,
+                    unfocusedContainerColor = Surface
+                )
+            )
+        } else {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "$sessionName · ${if (sessionRole == "admin") "администратор" else "оператор"}",
+                color = Ok,
+                fontSize = 14.sp
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = {
+                ParkSync.saveUrl(context, serverUrl)
+                if (sessionName.isNotBlank()) {
+                    ParkSync.logout(context)
+                    sessionName = ""
+                    sessionRole = ""
+                    serverMessage = "Вы вышли"
+                } else {
+                    scope.launch {
+                        try {
+                            val role = withContext(Dispatchers.IO) {
+                                ParkSync.login(context, serverUser, serverPassword)
+                            }
+                            sessionName = ParkSync.username(context)
+                            sessionRole = role
+                            serverPassword = ""
+                            serverMessage = "Вход выполнен"
+                        } catch (e: Exception) {
+                            serverMessage = e.message ?: "Не удалось войти"
+                        }
+                    }
+                }
+            },
+            enabled = serverUrl.trim().startsWith("http"),
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Fg)
+        ) {
+            Text(if (sessionName.isBlank()) "Войти" else "Выйти", fontWeight = FontWeight.Bold)
+        }
+        if (sessionRole == "admin") {
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = { usersOpen = true },
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Surface2, contentColor = Fg)
+            ) { Text("Учётные записи", color = Fg, fontWeight = FontWeight.Bold) }
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = { serverImportLauncher.launch(arrayOf("application/zip", "application/octet-stream")) },
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Surface2, contentColor = Fg)
+            ) { Text("Загрузить бэкап на сервер", color = Fg, fontWeight = FontWeight.Bold) }
+        }
+        serverMessage?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(it, color = if (it.startsWith("Вход") || it.startsWith("На сервер")) Ok else Danger, fontSize = 14.sp)
+        }
         Spacer(Modifier.height(16.dp))
         Text("Ссылка на скрипт таблицы", color = Muted, fontSize = 14.sp)
         Spacer(Modifier.height(8.dp))
@@ -296,7 +438,7 @@ private fun SettingsScreen() {
         ) {
             Text("Справочник", color = Fg, fontWeight = FontWeight.Bold)
         }
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(16.dp))
         Text(
             "Автор ПО - Telegram",
             color = Accent,

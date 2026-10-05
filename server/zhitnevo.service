@@ -1,0 +1,15 @@
+[Unit]
+Description=Zhitnevo Park sync
+After=network.target
+
+[Service]
+User=zhitnevo
+Group=zhitnevo
+EnvironmentFile=/etc/zhitnevo.env
+WorkingDirectory=/opt/zhitnevo
+ExecStart=/opt/zhitnevo/venv/bin/uvicorn app:app --host 0.0.0.0 --port 8787 --app-dir /opt/zhitnevo
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

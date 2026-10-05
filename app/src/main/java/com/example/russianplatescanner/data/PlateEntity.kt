@@ -14,7 +14,8 @@ data class PlateEntity(
     val note: String? = null,
     val unauthorizedExit: Boolean = false,
     val uploaded: Boolean = false,
-    val uid: String = UUID.randomUUID().toString()
+    val uid: String = UUID.randomUUID().toString(),
+    val pendingSync: Boolean = false
 ) {
     fun recordKey(): String = uid.ifBlank { id.toString() }
 }
