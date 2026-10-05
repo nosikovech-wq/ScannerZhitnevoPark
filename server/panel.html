@@ -128,6 +128,7 @@
     body[data-role="manager"] [data-edit] { display: none !important; }
     .tools { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
     .tools input { flex: 1; min-width: 180px; }
+    .tools input.date { flex: none; min-width: 0; width: auto; }
     .tools button { flex: none; }
     .tools select { width: auto; flex: none; padding: 10px 12px; }
     .btn.on { background: var(--fg); color: #101114; }
@@ -185,6 +186,8 @@
     <section id="journal">
       <div class="tools">
         <input id="search" placeholder="Номер, ФИО, заметка или сотрудник">
+        <input id="journalDate" class="date" type="date" aria-label="Дата">
+        <button class="btn ghost" id="journalAll" type="button">Все даты</button>
         <button class="btn ghost" id="missing" type="button">Нет в справочнике</button>
         <button class="btn ghost" id="unauth" type="button">Несогласованные</button>
         <select id="author" aria-label="Сотрудник">
@@ -393,6 +396,11 @@ document.getElementById("unauth").onclick = () => {
   loadJournal();
 };
 document.getElementById("author").onchange = () => loadJournal();
+document.getElementById("journalDate").onchange = () => loadJournal();
+document.getElementById("journalAll").onclick = () => {
+  document.getElementById("journalDate").value = "";
+  loadJournal();
+};
 document.getElementById("pageSize").onchange = () => {
   localStorage.setItem("park_limit", document.getElementById("pageSize").value);
   loadJournal();
@@ -549,12 +557,14 @@ async function loadJournal() {
   const missing = document.getElementById("missing").classList.contains("on") ? "1" : "0";
   const unauth = document.getElementById("unauth").classList.contains("on") ? "1" : "0";
   const author = document.getElementById("author").value;
+  const date = document.getElementById("journalDate").value;
   const data = await api(
     "/api/journal?q=" + encodeURIComponent(q) +
     "&limit=" + limit +
     "&missing=" + missing +
     "&unauthorized=" + unauth +
-    "&author=" + encodeURIComponent(author)
+    "&author=" + encodeURIComponent(author) +
+    "&date=" + encodeURIComponent(date)
   );
   fillAuthors(data.authors || []);
   const list = document.getElementById("list");

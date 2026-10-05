@@ -374,11 +374,22 @@ def journal(
     missing: int = 0,
     unauthorized: int = 0,
     author: str = "",
+    date: str = "",
     user: sqlite3.Row = Depends(current_user),
 ):
     text = q.strip().casefold()
     page = limit if limit in (10, 20, 50, 100, 200) else 50
     wanted = author.strip()
+    day_start = day_end = None
+    if date.strip():
+        try:
+            year, month, day = [int(part) for part in date.split("-")]
+            start = datetime(year, month, day, tzinfo=MSK)
+        except ValueError:
+            raise HTTPException(400, "Неверная дата")
+        day_start = int(start.timestamp() * 1000)
+        day_end = int((start + timedelta(days=1)).timestamp() * 1000)
+    cap = 1000 if day_start is not None else page
     labels = user_labels()
     by_plate, tractors = fleet_directory()
     with db() as conn:
@@ -407,6 +418,8 @@ def journal(
             continue
         if wanted and (row["author"] or "").strip() != wanted:
             continue
+        if day_start is not None and not (day_start <= row["ts"] < day_end):
+            continue
         if text:
             haystack = " ".join(
                 (
@@ -421,7 +434,7 @@ def journal(
             if text not in haystack:
                 continue
         plates.append(item)
-        if len(plates) >= page:
+        if len(plates) >= cap:
             break
     return {"plates": plates, "limit": page, "authors": seen}
 
