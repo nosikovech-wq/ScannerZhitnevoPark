@@ -161,6 +161,7 @@
       <button type="button" data-tab="stats">Статистика</button>
       <button type="button" data-tab="users" id="tabUsers">Сотрудники</button>
       <button type="button" data-tab="fleet" id="tabFleet">Справочник</button>
+      <button type="button" data-tab="data" id="tabData">База</button>
     </div>
 
     <section id="journal">
@@ -173,6 +174,30 @@
     <section id="stats" class="hidden"></section>
     <section id="users" class="hidden"></section>
     <section id="fleet" class="hidden"></section>
+    <section id="data" class="hidden">
+      <div class="card" style="width:100%">
+        <p class="sub">Архив совпадает с прежним бэкапом телефона: записи и фото. Загрузка добавляет только те строки, которых на сервере ещё нет.</p>
+        <div class="tools">
+          <button class="btn" id="downloadBackup" type="button">Скачать бэкап</button>
+          <button class="btn" id="uploadBackup" type="button">Загрузить бэкап</button>
+        </div>
+        <input id="backupFile" type="file" accept=".zip,application/zip" class="hidden">
+        <button class="btn danger" id="clearBase" type="button">Очистить базу</button>
+        <div class="error" id="dataMessage"></div>
+      </div>
+    </section>
+  </div>
+
+  <div id="clearModal" class="modal hidden">
+    <form class="card" id="clearForm">
+      <h2 style="margin-top:0">Очистить базу?</h2>
+      <p class="sub">Будут удалены все записи и фото на сервере. Телефоны уберут их при следующей синхронизации. Справочник не трогается.</p>
+      <label>Введите ОЧИСТИТЬ</label>
+      <input id="clearWord" autocomplete="off">
+      <button class="btn danger block" id="clearConfirm" type="submit" disabled>Очистить</button>
+      <button class="btn ghost block" id="clearCancel" type="button">Отмена</button>
+      <div class="error" id="clearError"></div>
+    </form>
   </div>
 
   <div id="modal" class="modal hidden">
@@ -202,7 +227,7 @@ async function api(path, options = {}) {
   return data;
 }
 function show(tab) {
-  ["journal", "stats", "users", "fleet"].forEach(id => {
+  ["journal", "stats", "users", "fleet", "data"].forEach(id => {
     document.getElementById(id).classList.toggle("hidden", id !== tab);
   });
   document.querySelectorAll(".tabs button").forEach(btn => btn.classList.toggle("on", btn.dataset.tab === tab));
@@ -216,6 +241,7 @@ function enter() {
   document.getElementById("app").classList.remove("hidden");
   document.getElementById("who").textContent = name + " · " + (role === "admin" ? "администратор" : "оператор");
   document.getElementById("tabUsers").classList.toggle("hidden", role !== "admin");
+  document.getElementById("tabData").classList.toggle("hidden", role !== "admin");
   show("journal");
 }
 function logout() {
@@ -268,6 +294,82 @@ document.getElementById("excel").onclick = async () => {
     alert(error.message);
   } finally {
     button.disabled = false;
+  }
+};
+async function saveBlob(path, filename) {
+  const response = await fetch(path, { headers: { Authorization: "Bearer " + token } });
+  if (response.status === 401) { logout(); return; }
+  if (!response.ok) throw new Error("Не удалось скачать файл");
+  const blob = await response.blob();
+  const link = document.createElement("a");
+  const named = response.headers.get("Content-Disposition") || "";
+  const found = named.match(/filename="([^"]+)"/);
+  link.href = URL.createObjectURL(blob);
+  link.download = found ? found[1] : filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+document.getElementById("downloadBackup").onclick = async () => {
+  const box = document.getElementById("dataMessage");
+  box.style.color = "";
+  box.textContent = "Сбор архива…";
+  try {
+    await saveBlob("/api/backup.zip", "ZhitnevoPark.zip");
+    box.style.color = "#7dba8a";
+    box.textContent = "Архив скачан";
+  } catch (error) {
+    box.textContent = error.message;
+  }
+};
+document.getElementById("uploadBackup").onclick = () => document.getElementById("backupFile").click();
+document.getElementById("backupFile").onchange = async (event) => {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = "";
+  if (!file) return;
+  const box = document.getElementById("dataMessage");
+  box.style.color = "";
+  box.textContent = "Загрузка…";
+  try {
+    const response = await fetch("/api/import", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/zip" },
+      body: file
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401) { logout(); return; }
+    if (!response.ok) throw new Error(data.error || "Не удалось загрузить бэкап");
+    box.style.color = "#7dba8a";
+    box.textContent = "Добавлено: " + data.inserted + ". Уже были: " + data.skipped + ".";
+    loadJournal();
+  } catch (error) {
+    box.textContent = error.message;
+  }
+};
+document.getElementById("clearBase").onclick = () => {
+  document.getElementById("clearWord").value = "";
+  document.getElementById("clearConfirm").disabled = true;
+  document.getElementById("clearError").textContent = "";
+  document.getElementById("clearModal").classList.remove("hidden");
+};
+document.getElementById("clearCancel").onclick = () => document.getElementById("clearModal").classList.add("hidden");
+document.getElementById("clearWord").oninput = () => {
+  document.getElementById("clearConfirm").disabled = document.getElementById("clearWord").value.trim() !== "ОЧИСТИТЬ";
+};
+document.getElementById("clearForm").onsubmit = async (event) => {
+  event.preventDefault();
+  try {
+    const data = await api("/api/clear", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm: document.getElementById("clearWord").value.trim() })
+    });
+    document.getElementById("clearModal").classList.add("hidden");
+    const box = document.getElementById("dataMessage");
+    box.style.color = "#7dba8a";
+    box.textContent = "Удалено записей: " + data.cleared;
+    loadJournal();
+  } catch (error) {
+    document.getElementById("clearError").textContent = error.message;
   }
 };
 async function loadJournal() {

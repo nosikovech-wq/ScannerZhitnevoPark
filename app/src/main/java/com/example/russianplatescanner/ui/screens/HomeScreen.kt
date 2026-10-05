@@ -2,8 +2,6 @@ package com.example.russianplatescanner.ui.screens
 
 import android.content.Intent
 import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -34,9 +32,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import com.example.russianplatescanner.PlateApp
 import com.example.russianplatescanner.ui.theme.Accent
 import com.example.russianplatescanner.ui.theme.AccentFg
 import com.example.russianplatescanner.ui.theme.Bg
@@ -48,11 +43,8 @@ import com.example.russianplatescanner.ui.theme.Ok
 import com.example.russianplatescanner.ui.theme.Subtle
 import com.example.russianplatescanner.ui.theme.Surface
 import com.example.russianplatescanner.ui.theme.Surface2
-import com.example.russianplatescanner.util.BackupStore
 import com.example.russianplatescanner.util.ParkSync
-import com.example.russianplatescanner.util.PhotoStorage
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -200,7 +192,7 @@ private fun HelpScreen() {
         )
         HelpCard(
             "Настройки",
-            "Шестерёнка справа от названия. Там адрес общего сервера, вход, сотрудники и загрузка бэкапа на сервер. Справочник на сервере меняет только администратор. «Очистить базу» удаляет записи и фото только на этом телефоне."
+            "Шестерёнка справа от названия. Там адрес сервера и вход. Справочник, бэкап, восстановление и очистка базы делаются в панели управления, их меняет только администратор."
         )
         Spacer(Modifier.height(8.dp))
     }
@@ -225,14 +217,6 @@ private fun HelpCard(title: String, body: String) {
 @Composable
 private fun SettingsScreen() {
     val context = LocalContext.current
-    val app = context.applicationContext as PlateApp
-    var confirmClear by remember { mutableStateOf(false) }
-    var clearing by remember { mutableStateOf(false) }
-    var clearMessage by remember { mutableStateOf<String?>(null) }
-    var backingUp by remember { mutableStateOf(false) }
-    var restoring by remember { mutableStateOf(false) }
-    var backupMessage by remember { mutableStateOf<String?>(null) }
-    var fleetOpen by remember { mutableStateOf(false) }
     var usersOpen by remember { mutableStateOf(false) }
     var serverUrl by remember { mutableStateOf(ParkSync.url(context)) }
     var serverUser by remember { mutableStateOf("") }
@@ -241,43 +225,8 @@ private fun SettingsScreen() {
     var sessionName by remember { mutableStateOf(ParkSync.username(context)) }
     var sessionRole by remember { mutableStateOf(ParkSync.role(context)) }
     val scope = rememberCoroutineScope()
-    val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            restoring = true
-            backupMessage = null
-            try {
-                val result = withContext(Dispatchers.IO) {
-                    BackupStore.restore(context, uri, app.plateDao)
-                }
-                backupMessage = "Восстановлено: ${result.added}. Уже были: ${result.skipped}."
-            } catch (e: Exception) {
-                backupMessage = e.message ?: "Не удалось восстановить"
-            } finally {
-                restoring = false
-            }
-        }
-    }
-    val serverImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            serverMessage = "Загрузка бэкапа на сервер…"
-            try {
-                val bytes = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Не удалось открыть архив")
-                }
-                serverMessage = withContext(Dispatchers.IO) { ParkSync.importBackup(context, bytes) }
-            } catch (e: Exception) {
-                serverMessage = e.message ?: "Не удалось загрузить бэкап"
-            }
-        }
-    }
     if (usersOpen) {
         UsersScreen(onBack = { usersOpen = false })
-        return
-    }
-    if (fleetOpen) {
-        FleetScreen(onBack = { fleetOpen = false })
         return
     }
 
@@ -397,24 +346,10 @@ private fun SettingsScreen() {
                 modifier = Modifier.fillMaxWidth().height(48.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Surface2, contentColor = Fg)
             ) { Text("Учётные записи", color = Fg, fontWeight = FontWeight.Bold) }
-            Spacer(Modifier.height(8.dp))
-            Button(
-                onClick = { serverImportLauncher.launch(arrayOf("application/zip", "application/octet-stream")) },
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Surface2, contentColor = Fg)
-            ) { Text("Загрузить бэкап на сервер", color = Fg, fontWeight = FontWeight.Bold) }
         }
         serverMessage?.let {
             Spacer(Modifier.height(8.dp))
             Text(it, color = if (it.startsWith("Вход") || it.startsWith("На сервер")) Ok else Danger, fontSize = 14.sp)
-        }
-        Spacer(Modifier.height(16.dp))
-        Button(
-            onClick = { fleetOpen = true },
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Surface2, contentColor = Fg)
-        ) {
-            Text("Справочник", color = Fg, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(16.dp))
         Text(
@@ -430,193 +365,5 @@ private fun SettingsScreen() {
                 }
                 .padding(vertical = 12.dp)
         )
-        Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = {
-                backupMessage = null
-                scope.launch {
-                    backingUp = true
-                    try {
-                        val plates = app.plateDao.getAll().first()
-                        BackupStore.share(context, plates)
-                        backupMessage = "Архив с записями и фото готов"
-                    } catch (e: Exception) {
-                        backupMessage = e.message ?: "Не удалось создать бэкап"
-                    } finally {
-                        backingUp = false
-                    }
-                }
-            },
-            enabled = !backingUp && !restoring && !clearing,
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Surface2,
-                contentColor = Fg,
-                disabledContainerColor = Surface2,
-                disabledContentColor = Muted
-            )
-        ) {
-            Text(if (backingUp) "Сбор архива…" else "Бэкап", color = Fg, fontWeight = FontWeight.Bold)
-        }
-        backupMessage?.let {
-            Spacer(Modifier.height(8.dp))
-            Text(it, color = if (it.startsWith("Архив") || it.startsWith("Восстановлено")) Ok else Danger, fontSize = 14.sp)
-        }
-        Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = {
-                restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream"))
-            },
-            enabled = !backingUp && !restoring && !clearing,
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Surface2,
-                contentColor = Fg,
-                disabledContainerColor = Surface2,
-                disabledContentColor = Muted
-            )
-        ) {
-            Text(if (restoring) "Восстановление…" else "Восстановить", color = Fg, fontWeight = FontWeight.Bold)
-        }
-        Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = {
-                clearMessage = null
-                confirmClear = true
-            },
-            enabled = !clearing,
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Danger,
-                contentColor = Fg,
-                disabledContainerColor = Surface2,
-                disabledContentColor = Muted
-            )
-        ) {
-            Text("Очистить базу", color = Fg, fontWeight = FontWeight.Bold)
-        }
-        clearMessage?.let {
-            Spacer(Modifier.height(8.dp))
-            Text(it, color = if (it.startsWith("База")) Ok else Danger, fontSize = 14.sp)
-        }
-    }
-
-    if (confirmClear) {
-        ClearDatabaseDialog(
-            busy = clearing,
-            onDismiss = { if (!clearing) confirmClear = false },
-            onConfirm = {
-                scope.launch {
-                    clearing = true
-                    try {
-                        val paths = app.plateDao.allPhotoPaths()
-                        PhotoStorage.deleteAll(context, paths)
-                        app.plateDao.deleteAll()
-                        clearMessage = "Записи и фото на этом телефоне удалены"
-                        confirmClear = false
-                    } catch (e: Exception) {
-                        clearMessage = e.message ?: "Не удалось очистить базу"
-                        confirmClear = false
-                    } finally {
-                        clearing = false
-                    }
-                }
-            }
-        )
-    }
-}
-
-@Composable
-private fun ClearDatabaseDialog(
-    busy: Boolean,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit
-) {
-    var password by remember { mutableStateOf("") }
-    val passwordOk = password == "Valter2018dvo"
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(Surface)
-                .padding(20.dp)
-        ) {
-            Text("Очистить базу?", color = Fg, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "Будут удалены все записи и фотографии на этом телефоне. На сервере они останутся. Вернуть их на телефон можно из бэкапа.",
-                color = Muted,
-                fontSize = 14.sp
-            )
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
-                value = password,
-                onValueChange = { password = it },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                label = { Text("Пароль") },
-                visualTransformation = PasswordVisualTransformation(),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Fg,
-                    unfocusedTextColor = Fg,
-                    focusedBorderColor = Accent,
-                    unfocusedBorderColor = Border,
-                    focusedLabelColor = Muted,
-                    unfocusedLabelColor = Muted,
-                    cursorColor = Fg,
-                    focusedContainerColor = Surface2,
-                    unfocusedContainerColor = Surface2
-                )
-            )
-            if (password.isNotEmpty() && !passwordOk) {
-                Spacer(Modifier.height(6.dp))
-                Text("Неверный пароль", color = Danger, fontSize = 13.sp)
-            }
-            Spacer(Modifier.height(16.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = onDismiss,
-                    enabled = !busy,
-                    modifier = Modifier.weight(1f).height(48.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Fg, contentColor = AccentFg)
-                ) {
-                    Text(
-                        "Отмена",
-                        color = AccentFg,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        softWrap = false
-                    )
-                }
-                Button(
-                    onClick = onConfirm,
-                    enabled = passwordOk && !busy,
-                    modifier = Modifier.weight(1f).height(48.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Danger,
-                        contentColor = Fg,
-                        disabledContainerColor = Surface2,
-                        disabledContentColor = Muted
-                    )
-                ) {
-                    Text(
-                        if (busy) "..." else "Очистить",
-                        color = if (passwordOk && !busy) Fg else Muted,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        softWrap = false
-                    )
-                }
-            }
-        }
     }
 }

@@ -495,6 +495,66 @@ def export_excel(user: sqlite3.Row = Depends(current_user)):
     )
 
 
+@app.get("/api/backup.zip")
+def download_backup(user: sqlite3.Row = Depends(admin_only)):
+    buffer = io.BytesIO()
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM plates WHERE deleted = 0 ORDER BY ts"
+        ).fetchall()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        payload = []
+        for row in rows:
+            photo_name = ""
+            path = Path(row["photo_path"]) if row["photo_path"] else PHOTO_DIR / f"{row['uid']}.jpg"
+            if not path.is_file():
+                path = PHOTO_DIR / f"{row['uid']}.jpg"
+            if path.is_file():
+                photo_name = f"{row['uid']}.jpg"
+                archive.write(path, f"photos/{photo_name}")
+            payload.append({
+                "uid": row["uid"],
+                "number": row["number"],
+                "timestamp": row["ts"],
+                "note": row["note"] or "",
+                "unauthorized": bool(row["unauthorized"]),
+                "uploaded": bool(row["sheet_uploaded"]),
+                "photo": photo_name,
+            })
+        archive.writestr("plates.json", json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+    stamp = datetime.now(MSK).strftime("%Y%m%d-%H%M")
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="ZhitnevoPark-{stamp}.zip"'},
+    )
+
+
+@app.post("/api/clear")
+async def clear_database(request: Request, user: sqlite3.Row = Depends(admin_only)):
+    body = await request.json()
+    if str(body.get("confirm", "")).strip() != "ОЧИСТИТЬ":
+        raise HTTPException(400, "Для очистки введите слово ОЧИСТИТЬ")
+    removed = 0
+    with lock, db() as conn:
+        rows = conn.execute("SELECT uid, photo_path FROM plates WHERE deleted = 0").fetchall()
+        updated = now_ms()
+        for row in rows:
+            path = Path(row["photo_path"]) if row["photo_path"] else PHOTO_DIR / f"{row['uid']}.jpg"
+            if path.is_file():
+                path.unlink()
+            fallback = PHOTO_DIR / f"{row['uid']}.jpg"
+            if fallback.is_file():
+                fallback.unlink()
+            conn.execute(
+                "UPDATE plates SET deleted = 1, photo_path = NULL, updated_at = ? WHERE uid = ?",
+                (updated, row["uid"]),
+            )
+            removed += 1
+        conn.commit()
+    return {"ok": True, "cleared": removed}
+
+
 @app.get("/api/health")
 def health():
     return {"ok": True}
