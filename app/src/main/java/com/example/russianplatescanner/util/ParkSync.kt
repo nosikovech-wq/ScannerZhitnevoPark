@@ -26,8 +26,20 @@ object ParkSync {
     private const val KEY_FLEET = "fleet_rev"
     private const val KEY_DELETES = "deletes"
 
-    fun url(context: Context): String =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_URL, "").orEmpty()
+    private const val SERVER = "https://168.113.210.66"
+
+    fun url(context: Context): String {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val saved = prefs.getString(KEY_URL, "").orEmpty().trim().trimEnd('/')
+        val legacy = saved == "http://168.113.210.66:8787" ||
+            saved == "http://168.113.210.66" ||
+            saved == "https://168.113.210.66:8787"
+        if (saved.isEmpty() || legacy) {
+            if (saved != SERVER) prefs.edit().putString(KEY_URL, SERVER).apply()
+            return SERVER
+        }
+        return saved
+    }
 
     fun saveUrl(context: Context, value: String) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()

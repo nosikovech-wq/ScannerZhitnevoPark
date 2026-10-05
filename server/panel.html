@@ -126,6 +126,8 @@
     .tools { display: flex; gap: 8px; margin-bottom: 12px; }
     .tools input { flex: 1; }
     .tools button { flex: none; }
+    .tools select { width: auto; flex: none; padding: 10px 12px; }
+    .btn.on { background: var(--fg); color: #101114; }
     table { width: 100%; border-collapse: collapse; }
     th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); }
     th { color: var(--muted); font-weight: 600; font-size: 13px; }
@@ -180,6 +182,14 @@
     <section id="journal">
       <div class="tools">
         <input id="search" placeholder="Поиск по номеру, заметке или оператору">
+        <button class="btn ghost" id="missing" type="button">Нет в справочнике</button>
+        <select id="pageSize" aria-label="Сколько записей показать">
+          <option value="10">10</option>
+          <option value="20">20</option>
+          <option value="50" selected>50</option>
+          <option value="100">100</option>
+          <option value="200">200</option>
+        </select>
         <button class="btn" id="excel" type="button">Excel</button>
       </div>
       <div id="list"></div>
@@ -306,9 +316,23 @@ document.getElementById("loginForm").onsubmit = async (event) => {
 document.getElementById("logout").onclick = logout;
 document.querySelectorAll(".tabs button").forEach(btn => btn.onclick = () => show(btn.dataset.tab));
 let searchTimer;
+let pageSize = localStorage.getItem("park_limit") || "50";
+if (!["10", "20", "50", "100", "200"].includes(pageSize)) pageSize = "50";
+document.getElementById("pageSize").value = pageSize;
+document.getElementById("missing").classList.toggle("on", localStorage.getItem("park_missing") === "1");
 document.getElementById("search").oninput = () => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(loadJournal, 250);
+};
+document.getElementById("missing").onclick = () => {
+  const button = document.getElementById("missing");
+  button.classList.toggle("on");
+  localStorage.setItem("park_missing", button.classList.contains("on") ? "1" : "0");
+  loadJournal();
+};
+document.getElementById("pageSize").onchange = () => {
+  localStorage.setItem("park_limit", document.getElementById("pageSize").value);
+  loadJournal();
 };
 document.getElementById("excel").onclick = async () => {
   const button = document.getElementById("excel");
@@ -407,7 +431,9 @@ document.getElementById("clearForm").onsubmit = async (event) => {
 };
 async function loadJournal() {
   const q = document.getElementById("search").value.trim();
-  const data = await api("/api/journal?q=" + encodeURIComponent(q));
+  const limit = document.getElementById("pageSize").value;
+  const missing = document.getElementById("missing").classList.contains("on") ? "1" : "0";
+  const data = await api("/api/journal?q=" + encodeURIComponent(q) + "&limit=" + limit + "&missing=" + missing);
   const list = document.getElementById("list");
   list.innerHTML = data.plates.map(plate => {
     const when = new Date(plate.timestamp).toLocaleString("ru-RU");

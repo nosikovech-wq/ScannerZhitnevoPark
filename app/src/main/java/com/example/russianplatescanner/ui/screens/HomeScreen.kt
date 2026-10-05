@@ -192,7 +192,7 @@ private fun HelpScreen() {
         )
         HelpCard(
             "Настройки",
-            "Шестерёнка справа от названия. Там адрес сервера и вход. Справочник, бэкап, восстановление и очистка базы делаются в панели управления, их меняет только администратор."
+            "Шестерёнка справа от названия. Там адрес сервера и вход. Сотрудники, справочник, бэкап и очистка базы — только в панели управления."
         )
         Spacer(Modifier.height(8.dp))
     }
@@ -217,7 +217,6 @@ private fun HelpCard(title: String, body: String) {
 @Composable
 private fun SettingsScreen() {
     val context = LocalContext.current
-    var usersOpen by remember { mutableStateOf(false) }
     var serverUrl by remember { mutableStateOf(ParkSync.url(context)) }
     var serverUser by remember { mutableStateOf("") }
     var serverPassword by remember { mutableStateOf("") }
@@ -225,10 +224,6 @@ private fun SettingsScreen() {
     var sessionName by remember { mutableStateOf(ParkSync.username(context)) }
     var sessionRole by remember { mutableStateOf(ParkSync.role(context)) }
     val scope = rememberCoroutineScope()
-    if (usersOpen) {
-        UsersScreen(onBack = { usersOpen = false })
-        return
-    }
 
     Column(
         Modifier
@@ -244,7 +239,7 @@ private fun SettingsScreen() {
             onValueChange = { serverUrl = it },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            placeholder = { Text("http://IP-сервера:8787") },
+            placeholder = { Text("https://168.113.210.66") },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = Fg,
                 unfocusedTextColor = Fg,
@@ -338,14 +333,6 @@ private fun SettingsScreen() {
                 color = AccentFg,
                 fontWeight = FontWeight.Bold
             )
-        }
-        if (sessionRole == "admin") {
-            Spacer(Modifier.height(8.dp))
-            Button(
-                onClick = { usersOpen = true },
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Surface2, contentColor = Fg)
-            ) { Text("Учётные записи", color = Fg, fontWeight = FontWeight.Bold) }
         }
         serverMessage?.let {
             Spacer(Modifier.height(8.dp))

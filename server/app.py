@@ -259,9 +259,10 @@ def apple_touch_file():
 
 
 @app.get("/api/journal")
-def journal(q: str = "", user: sqlite3.Row = Depends(current_user)):
+def journal(q: str = "", limit: int = 50, missing: int = 0, user: sqlite3.Row = Depends(current_user)):
     text = q.strip()
     like = f"%{text}%"
+    page = limit if limit in (10, 20, 50, 100, 200) else 50
     by_plate, tractors = fleet_directory()
     with db() as conn:
         rows = conn.execute(
@@ -271,7 +272,6 @@ def journal(q: str = "", user: sqlite3.Row = Depends(current_user)):
                 ? = '' OR number LIKE ? OR IFNULL(note, '') LIKE ? OR IFNULL(author, '') LIKE ?
             )
             ORDER BY ts DESC
-            LIMIT 500
             """,
             (text, like, like, like),
         ).fetchall()
@@ -281,8 +281,12 @@ def journal(q: str = "", user: sqlite3.Row = Depends(current_user)):
         crew = crew_for(row["number"], by_plate, tractors)
         item["driver"] = crew["driver"] if crew else ""
         item["trailer"] = crew["trailer"] if crew else ""
+        if missing and item["driver"]:
+            continue
         plates.append(item)
-    return {"plates": plates}
+        if len(plates) >= page:
+            break
+    return {"plates": plates, "limit": page}
 
 
 @app.get("/api/stats")
