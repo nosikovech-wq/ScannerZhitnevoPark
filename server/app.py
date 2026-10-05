@@ -259,22 +259,23 @@ def apple_touch_file():
 
 
 @app.get("/api/journal")
-def journal(q: str = "", limit: int = 50, missing: int = 0, user: sqlite3.Row = Depends(current_user)):
-    text = q.strip()
-    like = f"%{text}%"
+def journal(
+    q: str = "",
+    limit: int = 50,
+    missing: int = 0,
+    unauthorized: int = 0,
+    author: str = "",
+    user: sqlite3.Row = Depends(current_user),
+):
+    text = q.strip().casefold()
     page = limit if limit in (10, 20, 50, 100, 200) else 50
+    wanted = author.strip()
     by_plate, tractors = fleet_directory()
     with db() as conn:
         rows = conn.execute(
-            """
-            SELECT * FROM plates
-            WHERE deleted = 0 AND (
-                ? = '' OR number LIKE ? OR IFNULL(note, '') LIKE ? OR IFNULL(author, '') LIKE ?
-            )
-            ORDER BY ts DESC
-            """,
-            (text, like, like, like),
+            "SELECT * FROM plates WHERE deleted = 0 ORDER BY ts DESC"
         ).fetchall()
+    authors = sorted({(row["author"] or "").strip() for row in rows if (row["author"] or "").strip()})
     plates = []
     for row in rows:
         item = plate_json(row)
@@ -283,10 +284,20 @@ def journal(q: str = "", limit: int = 50, missing: int = 0, user: sqlite3.Row = 
         item["trailer"] = crew["trailer"] if crew else ""
         if missing and item["driver"]:
             continue
+        if unauthorized and not row["unauthorized"]:
+            continue
+        if wanted and (row["author"] or "").strip() != wanted:
+            continue
+        if text:
+            haystack = " ".join(
+                (row["number"] or "", row["note"] or "", row["author"] or "", item["driver"], item["trailer"])
+            ).casefold()
+            if text not in haystack:
+                continue
         plates.append(item)
         if len(plates) >= page:
             break
-    return {"plates": plates, "limit": page}
+    return {"plates": plates, "limit": page, "authors": authors}
 
 
 @app.get("/api/stats")
@@ -807,6 +818,27 @@ async def put_fleet(request: Request, user: sqlite3.Row = Depends(admin_only)):
         raise HTTPException(400, "Неверный справочник")
     write_fleet(rows)
     return {"ok": True, "revision": int(FLEET_PATH.stat().st_mtime * 1000)}
+
+
+@app.post("/api/fleet/row")
+async def add_fleet_row(request: Request, user: sqlite3.Row = Depends(admin_only)):
+    body = await request.json()
+    tractor = str(body.get("tractor") or "").strip()
+    trailer = str(body.get("trailer") or "").strip()
+    driver = str(body.get("driver") or "").strip()
+    if not tractor:
+        raise HTTPException(400, "Нужен номер тягача")
+    tractor_key = normalize_plate(tractor)
+    trailer_key = normalize_plate(trailer)
+    rows = read_fleet()
+    for row in rows:
+        if tractor_key and normalize_plate(row["tractor"]) == tractor_key:
+            raise HTTPException(409, "Такой тягач уже есть в справочнике")
+        if trailer_key and normalize_plate(row["trailer"]) == trailer_key:
+            raise HTTPException(409, "Такой прицеп уже есть в справочнике")
+    rows.insert(0, {"tractor": tractor, "trailer": trailer, "driver": driver})
+    write_fleet(rows)
+    return {"ok": True}
 
 
 @app.post("/api/import")

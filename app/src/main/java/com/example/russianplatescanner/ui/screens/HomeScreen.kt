@@ -22,6 +22,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,6 +54,7 @@ fun HomeScreen(
     onItemClick: (Long) -> Unit
 ) {
     var tab by remember { mutableStateOf(0) }
+    val offline by ParkSync.offline.collectAsState()
 
     Column(
         modifier = Modifier
@@ -130,6 +132,15 @@ fun HomeScreen(
         }
 
         Spacer(Modifier.height(16.dp))
+
+        if (offline) {
+            Text(
+                "Нет связи. Запись уже в телефоне и уйдёт на сервер, когда сеть появится.",
+                color = Danger,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+        }
 
         Box(Modifier.weight(1f)) {
             when (tab) {

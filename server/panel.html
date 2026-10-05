@@ -123,8 +123,8 @@
     .unknown { border-color: rgba(224, 161, 90, 0.7); }
     .miss { color: var(--warn); font-weight: 700; font-size: 12px; letter-spacing: 0.04em; }
     .side { display: flex; flex-direction: column; gap: 8px; }
-    .tools { display: flex; gap: 8px; margin-bottom: 12px; }
-    .tools input { flex: 1; }
+    .tools { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+    .tools input { flex: 1; min-width: 180px; }
     .tools button { flex: none; }
     .tools select { width: auto; flex: none; padding: 10px 12px; }
     .btn.on { background: var(--fg); color: #101114; }
@@ -181,8 +181,12 @@
 
     <section id="journal">
       <div class="tools">
-        <input id="search" placeholder="Поиск по номеру, заметке или оператору">
+        <input id="search" placeholder="Номер, ФИО, заметка или сотрудник">
         <button class="btn ghost" id="missing" type="button">Нет в справочнике</button>
+        <button class="btn ghost" id="unauth" type="button">Несогласованные</button>
+        <select id="author" aria-label="Сотрудник">
+          <option value="">Все сотрудники</option>
+        </select>
         <select id="pageSize" aria-label="Сколько записей показать">
           <option value="10">10</option>
           <option value="20">20</option>
@@ -221,6 +225,21 @@
       <button class="btn danger block" id="clearConfirm" type="submit" disabled>Очистить</button>
       <button class="btn ghost block" id="clearCancel" type="button">Отмена</button>
       <div class="error" id="clearError"></div>
+    </form>
+  </div>
+
+  <div id="fleetAdd" class="modal hidden">
+    <form class="card" id="fleetAddForm">
+      <h2 style="margin-top:0">В справочник</h2>
+      <label>Номер тягача</label>
+      <input id="addTractor" autocomplete="off" required>
+      <label>Номер прицепа</label>
+      <input id="addTrailer" autocomplete="off">
+      <label>ФИО</label>
+      <input id="addDriver" autocomplete="off">
+      <button class="btn block" type="submit">Добавить</button>
+      <button class="btn ghost block" id="addCancel" type="button">Отмена</button>
+      <div class="error" id="addError"></div>
     </form>
   </div>
 
@@ -320,6 +339,7 @@ let pageSize = localStorage.getItem("park_limit") || "50";
 if (!["10", "20", "50", "100", "200"].includes(pageSize)) pageSize = "50";
 document.getElementById("pageSize").value = pageSize;
 document.getElementById("missing").classList.toggle("on", localStorage.getItem("park_missing") === "1");
+document.getElementById("unauth").classList.toggle("on", localStorage.getItem("park_unauth") === "1");
 document.getElementById("search").oninput = () => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(loadJournal, 250);
@@ -330,6 +350,13 @@ document.getElementById("missing").onclick = () => {
   localStorage.setItem("park_missing", button.classList.contains("on") ? "1" : "0");
   loadJournal();
 };
+document.getElementById("unauth").onclick = () => {
+  const button = document.getElementById("unauth");
+  button.classList.toggle("on");
+  localStorage.setItem("park_unauth", button.classList.contains("on") ? "1" : "0");
+  loadJournal();
+};
+document.getElementById("author").onchange = () => loadJournal();
 document.getElementById("pageSize").onchange = () => {
   localStorage.setItem("park_limit", document.getElementById("pageSize").value);
   loadJournal();
@@ -433,13 +460,25 @@ async function loadJournal() {
   const q = document.getElementById("search").value.trim();
   const limit = document.getElementById("pageSize").value;
   const missing = document.getElementById("missing").classList.contains("on") ? "1" : "0";
-  const data = await api("/api/journal?q=" + encodeURIComponent(q) + "&limit=" + limit + "&missing=" + missing);
+  const unauth = document.getElementById("unauth").classList.contains("on") ? "1" : "0";
+  const author = document.getElementById("author").value;
+  const data = await api(
+    "/api/journal?q=" + encodeURIComponent(q) +
+    "&limit=" + limit +
+    "&missing=" + missing +
+    "&unauthorized=" + unauth +
+    "&author=" + encodeURIComponent(author)
+  );
+  fillAuthors(data.authors || []);
   const list = document.getElementById("list");
   list.innerHTML = data.plates.map(plate => {
     const when = new Date(plate.timestamp).toLocaleString("ru-RU");
     const img = plate.hasPhoto ? `<img src="${photoUrl(plate.uid)}" alt="">` : `<div class="ph"></div>`;
     const del = role === "admin" ? `<button class="btn danger" data-del="${plate.uid}">Удалить</button>` : "";
     const known = Boolean(plate.driver);
+    const add = !known && role === "admin"
+      ? `<button class="btn" data-fleet="${escapeAttr(plate.number)}" type="button">В справочник</button>`
+      : "";
     return `<article class="row${known ? "" : " unknown"}">
       ${img}
       <div>
@@ -451,6 +490,7 @@ async function loadJournal() {
       </div>
       <div class="side">
         <button class="btn ghost" data-edit="${plate.uid}" type="button">Изменить</button>
+        ${add}
         ${del}
       </div>
     </article>`;
@@ -461,6 +501,7 @@ async function loadJournal() {
     const plate = journalRows.find(item => item.uid === btn.dataset.edit);
     if (plate) openEdit(plate);
   });
+  list.querySelectorAll("[data-fleet]").forEach(btn => btn.onclick = () => openFleetAdd(btn.dataset.fleet));
   list.querySelectorAll("[data-del]").forEach(btn => btn.onclick = async () => {
     if (!confirm("Удалить запись и фото?")) return;
     await api("/api/plates/" + encodeURIComponent(btn.dataset.del), { method: "DELETE" });
@@ -482,6 +523,44 @@ function prettyPlate(value) {
   }
   return value || "";
 }
+function fillAuthors(authors) {
+  const select = document.getElementById("author");
+  const current = select.value;
+  select.innerHTML = `<option value="">Все сотрудники</option>` + authors.map(name =>
+    `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`
+  ).join("");
+  if ([...select.options].some(option => option.value === current)) select.value = current;
+}
+function openFleetAdd(number) {
+  document.getElementById("addTractor").value = prettyPlate(number);
+  document.getElementById("addTrailer").value = "";
+  document.getElementById("addDriver").value = "";
+  document.getElementById("addError").textContent = "";
+  document.getElementById("fleetAdd").classList.remove("hidden");
+}
+document.getElementById("addCancel").onclick = () => document.getElementById("fleetAdd").classList.add("hidden");
+document.getElementById("fleetAddForm").onsubmit = async (event) => {
+  event.preventDefault();
+  document.getElementById("addError").textContent = "";
+  try {
+    await api("/api/fleet/row", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tractor: document.getElementById("addTractor").value,
+        trailer: document.getElementById("addTrailer").value,
+        driver: document.getElementById("addDriver").value
+      })
+    });
+    document.getElementById("fleetAdd").classList.add("hidden");
+    const box = document.getElementById("journalMessage");
+    box.style.color = "#7dba8a";
+    box.textContent = "Добавлено в справочник";
+    loadJournal();
+  } catch (error) {
+    document.getElementById("addError").textContent = error.message;
+  }
+};
 function openEdit(plate) {
   editUid = plate.uid;
   document.getElementById("editNumber").value = prettyPlate(plate.number);

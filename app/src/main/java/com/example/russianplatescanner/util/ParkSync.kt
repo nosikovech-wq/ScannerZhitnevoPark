@@ -7,6 +7,9 @@ import com.example.russianplatescanner.data.PlateDao
 import com.example.russianplatescanner.data.PlateEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -27,6 +30,9 @@ object ParkSync {
     private const val KEY_DELETES = "deletes"
 
     private const val SERVER = "https://168.113.210.66"
+
+    private val _offline = MutableStateFlow(false)
+    val offline: StateFlow<Boolean> = _offline.asStateFlow()
 
     fun url(context: Context): String {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -70,7 +76,10 @@ object ParkSync {
         scope.launch {
             while (true) {
                 if (loggedIn(app)) {
-                    runCatching { cycle(app) }
+                    val ok = runCatching { cycle(app) }.isSuccess
+                    _offline.value = !ok
+                } else {
+                    _offline.value = false
                 }
                 delay(3000)
             }
@@ -162,10 +171,13 @@ object ParkSync {
     private suspend fun cycle(app: PlateApp) {
         val dao = app.plateDao
         flushDeletes(app)
+        var pendingFailed = false
         dao.pending().forEach { plate ->
-            runCatching { pushOne(app, dao, plate) }
+            val pushed = runCatching { pushOne(app, dao, plate) }.isSuccess
+            if (!pushed) pendingFailed = true
         }
         pull(app, dao)
+        if (pendingFailed) error("Не удалось отправить запись")
     }
 
     private fun flushDeletes(context: Context) {
