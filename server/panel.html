@@ -346,11 +346,13 @@ async function loadUsers() {
         <option value="operator">Оператор</option>
         <option value="admin">Администратор</option>
       </select>
+      <label>Комментарий</label>
+      <input id="nc" autocomplete="off" placeholder="Необязательно">
       <button class="btn block" type="submit">Добавить</button>
       <div class="error" id="userError"></div>
     </form>
-    <table><tr><th>Логин</th><th>Тип</th><th></th></tr>
-    ${data.users.map(u => `<tr><td>${escapeHtml(u.username)}</td><td>${u.role === "admin" ? "Администратор" : "Оператор"}</td>
+    <table><tr><th>Логин</th><th>Тип</th><th>Комментарий</th><th></th></tr>
+    ${data.users.map(u => `<tr><td>${escapeHtml(u.username)}</td><td>${u.role === "admin" ? "Администратор" : "Оператор"}</td><td>${escapeHtml(u.comment || "")}</td>
       <td><button class="btn danger" data-user="${u.id}">Удалить</button></td></tr>`).join("")}
     </table>`;
   document.getElementById("newUser").onsubmit = async (event) => {
@@ -359,7 +361,7 @@ async function loadUsers() {
       await api("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: nu.value, password: np.value, role: nr.value })
+        body: JSON.stringify({ username: nu.value, password: np.value, role: nr.value, comment: nc.value })
       });
       loadUsers();
     } catch (error) {
@@ -409,7 +411,7 @@ function bindFleet(rows) {
     loadFleetFrom(rows);
   });
   document.getElementById("addCrew").onclick = () => {
-    rows.push({ tractor: "", trailer: "", driver: "" });
+    rows.unshift({ tractor: "", trailer: "", driver: "" });
     loadFleetFrom(rows);
   };
   document.getElementById("saveFleet").onclick = async () => {

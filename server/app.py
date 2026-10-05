@@ -67,6 +67,7 @@ def init_db() -> None:
                 username TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
                 role TEXT NOT NULL,
+                comment TEXT NOT NULL DEFAULT '',
                 created_at INTEGER NOT NULL
             );
             CREATE TABLE IF NOT EXISTS sessions (
@@ -91,6 +92,9 @@ def init_db() -> None:
         cols = [info[1] for info in conn.execute("PRAGMA table_info(plates)")]
         if "sheet_uploaded" not in cols:
             conn.execute("ALTER TABLE plates ADD COLUMN sheet_uploaded INTEGER NOT NULL DEFAULT 0")
+        user_cols = [info[1] for info in conn.execute("PRAGMA table_info(users)")]
+        if "comment" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN comment TEXT NOT NULL DEFAULT ''")
         admin = os.environ.get("ADMIN_USER", "admin").strip()
         password = os.environ.get("ADMIN_PASSWORD", "").strip()
         exists = conn.execute("SELECT id FROM users WHERE username = ?", (admin,)).fetchone()
@@ -308,7 +312,7 @@ def me(user: sqlite3.Row = Depends(current_user)):
 @app.get("/api/users")
 def list_users(user: sqlite3.Row = Depends(admin_only)):
     with db() as conn:
-        rows = conn.execute("SELECT id, username, role, created_at FROM users ORDER BY username").fetchall()
+        rows = conn.execute("SELECT id, username, role, comment, created_at FROM users ORDER BY username").fetchall()
     return {"users": [dict(row) for row in rows]}
 
 
@@ -318,13 +322,14 @@ async def create_user(request: Request, actor: sqlite3.Row = Depends(admin_only)
     username = str(body.get("username", "")).strip()
     password = str(body.get("password", ""))
     role = "admin" if body.get("role") == "admin" else "operator"
+    comment = str(body.get("comment", "")).strip()
     if len(username) < 2 or len(password) < 4:
         raise HTTPException(400, "Логин от 2 символов, пароль от 4")
     with db() as conn:
         try:
             conn.execute(
-                "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
-                (username, hash_password(password), role, now_ms()),
+                "INSERT INTO users (username, password_hash, role, comment, created_at) VALUES (?, ?, ?, ?, ?)",
+                (username, hash_password(password), role, comment, now_ms()),
             )
             conn.commit()
         except sqlite3.IntegrityError:
