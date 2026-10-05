@@ -234,6 +234,16 @@ def restore_backup(name: str, request: Request, user: sqlite3.Row = Depends(admi
     return {"ok": True, "when": backup_label(name)}
 
 
+def user_labels() -> dict:
+    with db() as conn:
+        rows = conn.execute("SELECT username, comment FROM users").fetchall()
+    labels = {}
+    for row in rows:
+        comment = (row["comment"] or "").strip()
+        labels[row["username"]] = comment or row["username"]
+    return labels
+
+
 def plate_json(row: sqlite3.Row) -> dict:
     return {
         "uid": row["uid"],
@@ -369,15 +379,25 @@ def journal(
     text = q.strip().casefold()
     page = limit if limit in (10, 20, 50, 100, 200) else 50
     wanted = author.strip()
+    labels = user_labels()
     by_plate, tractors = fleet_directory()
     with db() as conn:
         rows = conn.execute(
             "SELECT * FROM plates WHERE deleted = 0 ORDER BY ts DESC"
         ).fetchall()
-    authors = sorted({(row["author"] or "").strip() for row in rows if (row["author"] or "").strip()})
+    seen = []
+    known = set()
+    for row in rows:
+        login = (row["author"] or "").strip()
+        if login and login not in known:
+            known.add(login)
+            seen.append({"login": login, "name": labels.get(login, login)})
+    seen.sort(key=lambda item: item["name"])
     plates = []
     for row in rows:
         item = plate_json(row)
+        login = (row["author"] or "").strip()
+        item["authorName"] = labels.get(login, login)
         crew = crew_for(row["number"], by_plate, tractors)
         item["driver"] = crew["driver"] if crew else ""
         item["trailer"] = crew["trailer"] if crew else ""
@@ -389,14 +409,21 @@ def journal(
             continue
         if text:
             haystack = " ".join(
-                (row["number"] or "", row["note"] or "", row["author"] or "", item["driver"], item["trailer"])
+                (
+                    row["number"] or "",
+                    row["note"] or "",
+                    row["author"] or "",
+                    item["authorName"],
+                    item["driver"],
+                    item["trailer"],
+                )
             ).casefold()
             if text not in haystack:
                 continue
         plates.append(item)
         if len(plates) >= page:
             break
-    return {"plates": plates, "limit": page, "authors": authors}
+    return {"plates": plates, "limit": page, "authors": seen}
 
 
 @app.get("/api/stats")
@@ -434,6 +461,7 @@ def stats(date: str = "", user: sqlite3.Row = Depends(current_user)):
     day_unauth = 0
     month_unauth = 0
     day_plates = []
+    labels = user_labels()
     for row in rows:
         moment = datetime.fromtimestamp(row["ts"] / 1000, MSK)
         by_day[moment.day] = by_day.get(moment.day, 0) + 1
@@ -451,7 +479,7 @@ def stats(date: str = "", user: sqlite3.Row = Depends(current_user)):
             day_plates.append({
                 "time": moment.strftime("%H:%M"),
                 "number": row["number"],
-                "author": row["author"] or "",
+                "author": labels.get(who, who),
                 "note": row["note"] or "",
                 "unauthorized": bool(row["unauthorized"]),
             })
@@ -469,7 +497,7 @@ def stats(date: str = "", user: sqlite3.Row = Depends(current_user)):
         "year": day_start.year,
         "days": [{"day": day, "count": by_day.get(day, 0)} for day in range(1, last_day + 1)],
         "hours": [{"hour": hour, "count": hours[hour]} for hour in range(24)],
-        "staff": [{"name": person, "count": count} for person, count in sorted(staff.items(), key=lambda item: -item[1])],
+        "staff": [{"name": labels.get(person, person), "count": count} for person, count in sorted(staff.items(), key=lambda item: -item[1])],
         "plates": list(reversed(day_plates)),
     }
     if user["role"] != "manager":

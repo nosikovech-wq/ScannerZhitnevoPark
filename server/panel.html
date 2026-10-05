@@ -574,7 +574,7 @@ async function loadJournal() {
       <div>
         <div class="plate">${escapeHtml(plate.number)}</div>
         ${known ? `<div>${escapeHtml(plate.driver)}</div>` : `<div class="miss">НЕТ В СПРАВОЧНИКЕ</div>`}
-        <div class="meta">${when}${plate.author ? " · " + escapeHtml(plate.author) : ""}</div>
+        <div class="meta">${when}${plate.authorName ? " · " + escapeHtml(plate.authorName) : ""}</div>
         ${plate.unauthorized ? `<div class="bad">НЕСОГЛАСОВАННЫЙ ВЫЕЗД</div>` : ""}
         ${plate.note ? `<div class="meta">${escapeHtml(plate.note)}</div>` : ""}
       </div>
@@ -612,9 +612,11 @@ function prettyPlate(value) {
 function fillAuthors(authors) {
   const select = document.getElementById("author");
   const current = select.value;
-  select.innerHTML = `<option value="">Все сотрудники</option>` + authors.map(name =>
-    `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`
-  ).join("");
+  select.innerHTML = `<option value="">Все сотрудники</option>` + authors.map(person => {
+    const login = typeof person === "string" ? person : person.login;
+    const title = typeof person === "string" ? person : person.name;
+    return `<option value="${escapeAttr(login)}">${escapeHtml(title)}</option>`;
+  }).join("");
   if ([...select.options].some(option => option.value === current)) select.value = current;
 }
 function openFleetAdd(number) {
