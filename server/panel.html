@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Житнево Парк</title>
+  <style>
+    :root {
+      --bg: #0b0c0e;
+      --surface: #14161a;
+      --surface2: #1c1f25;
+      --fg: #f1f2f4;
+      --muted: #9aa0aa;
+      --subtle: #6d7380;
+      --line: rgba(241, 242, 244, 0.12);
+      --ok: #7dba8a;
+      --danger: #e23b3b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button, input { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 20px; }
+    .login {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .card {
+      width: min(420px, 100%);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      padding: 28px;
+    }
+    h1 { margin: 0 0 6px; font-size: 28px; }
+    .sub { color: var(--muted); margin-bottom: 20px; }
+    label { display: block; color: var(--muted); font-size: 13px; margin: 12px 0 6px; }
+    input, select {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+      outline: none;
+    }
+    input:focus, select:focus { border-color: #f1f2f4; }
+    .btn {
+      border: 0;
+      border-radius: 12px;
+      padding: 12px 16px;
+      background: #e8eaee;
+      color: #101114;
+      font-weight: 700;
+    }
+    .btn.block { width: 100%; margin-top: 18px; }
+    .btn.ghost { background: var(--surface2); color: var(--fg); border: 1px solid var(--line); }
+    .btn.danger { background: var(--danger); color: white; }
+    .top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+    .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+    .tabs button {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 8px 14px;
+    }
+    .tabs button.on { background: var(--fg); color: #101114; border-color: var(--fg); }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .stat {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+    }
+    .stat b { display: block; font-size: 32px; }
+    .stat span { color: var(--muted); }
+    .bars { margin-top: 16px; display: grid; gap: 8px; }
+    .bar { display: grid; grid-template-columns: 36px 1fr 32px; gap: 8px; align-items: center; color: var(--muted); font-size: 13px; }
+    .bar i { display: block; height: 8px; background: var(--surface2); border-radius: 99px; overflow: hidden; }
+    .bar i span { display: block; height: 100%; background: var(--ok); }
+    .row {
+      display: grid;
+      grid-template-columns: 92px 1fr auto;
+      gap: 14px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 10px;
+      margin-bottom: 10px;
+      align-items: center;
+    }
+    .row img, .ph {
+      width: 92px;
+      height: 68px;
+      object-fit: cover;
+      border-radius: 10px;
+      background: var(--surface2);
+    }
+    .plate { font-family: ui-monospace, monospace; font-weight: 700; font-size: 18px; }
+    .meta { color: var(--muted); font-size: 13px; }
+    .bad { color: var(--danger); font-weight: 700; font-size: 12px; }
+    .tools { display: flex; gap: 8px; margin-bottom: 12px; }
+    .tools input { flex: 1; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; font-size: 13px; }
+    .error { color: var(--danger); min-height: 1.2em; margin-top: 8px; }
+    .hidden { display: none; }
+    .modal {
+      position: fixed; inset: 0; background: rgba(0,0,0,.72);
+      display: grid; place-items: center; padding: 20px;
+    }
+    .modal img { max-width: min(920px, 100%); max-height: 70vh; border-radius: 16px; }
+    @media (max-width: 700px) {
+      .stats { grid-template-columns: 1fr; }
+      .row { grid-template-columns: 72px 1fr; }
+      .row .side { grid-column: 2; }
+    }
+  </style>
+</head>
+<body>
+  <div id="login" class="login">
+    <form class="card" id="loginForm">
+      <h1>Житнево Парк</h1>
+      <div class="sub">Панель управления</div>
+      <label>Логин</label>
+      <input id="user" autocomplete="username" required>
+      <label>Пароль</label>
+      <input id="pass" type="password" autocomplete="current-password" required>
+      <button class="btn block" type="submit">Войти</button>
+      <div class="error" id="loginError"></div>
+    </form>
+  </div>
+
+  <div id="app" class="wrap hidden">
+    <div class="top">
+      <div>
+        <h1>Житнево Парк</h1>
+        <div class="sub" id="who"></div>
+      </div>
+      <button class="btn ghost" id="logout" type="button">Выйти</button>
+    </div>
+    <div class="tabs">
+      <button type="button" data-tab="journal" class="on">Журнал</button>
+      <button type="button" data-tab="stats">Статистика</button>
+      <button type="button" data-tab="users" id="tabUsers">Учётки</button>
+      <button type="button" data-tab="fleet" id="tabFleet">Справочник</button>
+    </div>
+
+    <section id="journal">
+      <div class="tools">
+        <input id="search" placeholder="Поиск по номеру, заметке или оператору">
+      </div>
+      <div id="list"></div>
+    </section>
+    <section id="stats" class="hidden"></section>
+    <section id="users" class="hidden"></section>
+    <section id="fleet" class="hidden"></section>
+  </div>
+
+  <div id="modal" class="modal hidden">
+    <div>
+      <img id="modalImg" alt="">
+      <div style="text-align:center;margin-top:12px">
+        <button class="btn ghost" id="modalClose" type="button">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+const months = ["январь","февраль","март","апрель","май","июнь","июль","август","сентябрь","октябрь","ноябрь","декабрь"];
+let token = localStorage.getItem("park_token") || "";
+let role = localStorage.getItem("park_role") || "";
+let name = localStorage.getItem("park_name") || "";
+
+function photoUrl(uid) {
+  return "/api/photos/" + encodeURIComponent(uid) + "?token=" + encodeURIComponent(token);
+}
+async function api(path, options = {}) {
+  const headers = Object.assign({ Authorization: "Bearer " + token }, options.headers || {});
+  const response = await fetch(path, Object.assign({}, options, { headers }));
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 401) { logout(); throw new Error(data.error || "Нужно войти"); }
+  if (!response.ok) throw new Error(data.error || "Ошибка");
+  return data;
+}
+function show(tab) {
+  ["journal", "stats", "users", "fleet"].forEach(id => {
+    document.getElementById(id).classList.toggle("hidden", id !== tab);
+  });
+  document.querySelectorAll(".tabs button").forEach(btn => btn.classList.toggle("on", btn.dataset.tab === tab));
+  if (tab === "journal") loadJournal();
+  if (tab === "stats") loadStats();
+  if (tab === "users") loadUsers();
+  if (tab === "fleet") loadFleet();
+}
+function enter() {
+  document.getElementById("login").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  document.getElementById("who").textContent = name + " · " + (role === "admin" ? "администратор" : "оператор");
+  document.getElementById("tabUsers").classList.toggle("hidden", role !== "admin");
+  show("journal");
+}
+function logout() {
+  token = role = name = "";
+  localStorage.removeItem("park_token");
+  localStorage.removeItem("park_role");
+  localStorage.removeItem("park_name");
+  document.getElementById("app").classList.add("hidden");
+  document.getElementById("login").classList.remove("hidden");
+}
+document.getElementById("loginForm").onsubmit = async (event) => {
+  event.preventDefault();
+  document.getElementById("loginError").textContent = "";
+  try {
+    const data = await api("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "" },
+      body: JSON.stringify({ username: user.value.trim(), password: pass.value })
+    });
+    token = data.token; role = data.role; name = data.username;
+    localStorage.setItem("park_token", token);
+    localStorage.setItem("park_role", role);
+    localStorage.setItem("park_name", name);
+    enter();
+  } catch (error) {
+    document.getElementById("loginError").textContent = error.message;
+  }
+};
+document.getElementById("logout").onclick = logout;
+document.querySelectorAll(".tabs button").forEach(btn => btn.onclick = () => show(btn.dataset.tab));
+let searchTimer;
+document.getElementById("search").oninput = () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(loadJournal, 250);
+};
+async function loadJournal() {
+  const q = document.getElementById("search").value.trim();
+  const data = await api("/api/journal?q=" + encodeURIComponent(q));
+  const list = document.getElementById("list");
+  list.innerHTML = data.plates.map(plate => {
+    const when = new Date(plate.timestamp).toLocaleString("ru-RU");
+    const img = plate.hasPhoto ? `<img src="${photoUrl(plate.uid)}" alt="">` : `<div class="ph"></div>`;
+    const del = role === "admin" ? `<button class="btn danger" data-del="${plate.uid}">Удалить</button>` : "";
+    return `<article class="row">
+      ${img}
+      <div>
+        <div class="plate">${escapeHtml(plate.number)}</div>
+        <div class="meta">${when}${plate.author ? " · " + escapeHtml(plate.author) : ""}</div>
+        ${plate.unauthorized ? `<div class="bad">НЕСОГЛАСОВАННЫЙ ВЫЕЗД</div>` : ""}
+        ${plate.note ? `<div class="meta">${escapeHtml(plate.note)}</div>` : ""}
+      </div>
+      <div class="side">${del}</div>
+    </article>`;
+  }).join("") || `<div class="sub">Записей нет</div>`;
+  list.querySelectorAll("img").forEach(img => img.onclick = () => openPhoto(img.src));
+  list.querySelectorAll("[data-del]").forEach(btn => btn.onclick = async () => {
+    if (!confirm("Удалить запись и фото?")) return;
+    await api("/api/plates/" + encodeURIComponent(btn.dataset.del), { method: "DELETE" });
+    loadJournal();
+  });
+}
+function openPhoto(src) {
+  document.getElementById("modalImg").src = src;
+  document.getElementById("modal").classList.remove("hidden");
+}
+document.getElementById("modalClose").onclick = () => document.getElementById("modal").classList.add("hidden");
+document.getElementById("modal").onclick = (event) => {
+  if (event.target.id === "modal") document.getElementById("modal").classList.add("hidden");
+};
+async function loadStats() {
+  const data = await api("/api/stats");
+  const max = Math.max(1, ...data.days.map(d => d.count));
+  document.getElementById("stats").innerHTML = `
+    <div class="stats">
+      <div class="stat"><b>${data.day}</b><span>за сегодня</span></div>
+      <div class="stat"><b>${data.month}</b><span>за ${months[data.monthNumber - 1]} ${data.year}</span></div>
+      <div class="stat"><b>${data.unauthorized}</b><span>несогласованных за месяц</span></div>
+    </div>
+    <div class="bars">${data.days.map(d => `
+      <div class="bar"><span>${d.day}</span><i><span style="width:${Math.round(d.count / max * 100)}%"></span></i><span>${d.count}</span></div>
+    `).join("")}</div>`;
+}
+async function loadUsers() {
+  const data = await api("/api/users");
+  document.getElementById("users").innerHTML = `
+    <form id="newUser" class="card" style="width:100%;margin-bottom:16px">
+      <div class="tools">
+        <input id="nu" placeholder="Логин" required>
+        <input id="np" placeholder="Пароль" required>
+        <select id="nr"><option value="operator">Оператор</option><option value="admin">Администратор</option></select>
+        <button class="btn" type="submit">Добавить</button>
+      </div>
+      <div class="error" id="userError"></div>
+    </form>
+    <table><tr><th>Логин</th><th>Роль</th><th></th></tr>
+    ${data.users.map(u => `<tr><td>${escapeHtml(u.username)}</td><td>${u.role === "admin" ? "Администратор" : "Оператор"}</td>
+      <td><button class="btn danger" data-user="${u.id}">Удалить</button></td></tr>`).join("")}
+    </table>`;
+  document.getElementById("newUser").onsubmit = async (event) => {
+    event.preventDefault();
+    try {
+      await api("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: nu.value, password: np.value, role: nr.value })
+      });
+      loadUsers();
+    } catch (error) {
+      document.getElementById("userError").textContent = error.message;
+    }
+  };
+  document.querySelectorAll("[data-user]").forEach(btn => btn.onclick = async () => {
+    if (!confirm("Удалить учётку?")) return;
+    try { await api("/api/users/" + btn.dataset.user, { method: "DELETE" }); loadUsers(); }
+    catch (error) { alert(error.message); }
+  });
+}
+async function loadFleet() {
+  const data = await api("/api/fleet");
+  const body = data.rows.map((row, i) => `
+    <tr>
+      <td><input data-f="tractor" data-i="${i}" value="${escapeAttr(row.tractor)}"></td>
+      <td><input data-f="trailer" data-i="${i}" value="${escapeAttr(row.trailer)}"></td>
+      <td><input data-f="driver" data-i="${i}" value="${escapeAttr(row.driver)}"></td>
+      <td><button class="btn danger" data-drop="${i}" type="button">Удалить</button></td>
+    </tr>`).join("");
+  document.getElementById("fleet").innerHTML = `
+    <div class="tools"><button class="btn" id="addCrew" type="button">Добавить</button><button class="btn" id="saveFleet" type="button">Сохранить</button></div>
+    <table><tr><th>Тягач</th><th>Прицеп</th><th>ФИО</th><th></th></tr><tbody id="fleetBody">${body}</tbody></table>
+    <div class="error" id="fleetError"></div>`;
+  const rows = data.rows.slice();
+  const paint = () => { window._fleet = rows; loadFleetFrom(rows); };
+  window._fleet = rows;
+  bindFleet(rows);
+}
+function loadFleetFrom(rows) {
+  document.getElementById("fleetBody").innerHTML = rows.map((row, i) => `
+    <tr>
+      <td><input data-f="tractor" data-i="${i}" value="${escapeAttr(row.tractor)}"></td>
+      <td><input data-f="trailer" data-i="${i}" value="${escapeAttr(row.trailer)}"></td>
+      <td><input data-f="driver" data-i="${i}" value="${escapeAttr(row.driver)}"></td>
+      <td><button class="btn danger" data-drop="${i}" type="button">Удалить</button></td>
+    </tr>`).join("");
+  bindFleet(rows);
+}
+function bindFleet(rows) {
+  document.querySelectorAll("#fleetBody input").forEach(input => {
+    input.oninput = () => { rows[input.dataset.i][input.dataset.f] = input.value; };
+  });
+  document.querySelectorAll("[data-drop]").forEach(btn => btn.onclick = () => {
+    rows.splice(Number(btn.dataset.drop), 1);
+    loadFleetFrom(rows);
+  });
+  document.getElementById("addCrew").onclick = () => {
+    rows.push({ tractor: "", trailer: "", driver: "" });
+    loadFleetFrom(rows);
+  };
+  document.getElementById("saveFleet").onclick = async () => {
+    try {
+      await api("/api/fleet", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows })
+      });
+      document.getElementById("fleetError").style.color = "#7dba8a";
+      document.getElementById("fleetError").textContent = "Сохранено";
+    } catch (error) {
+      document.getElementById("fleetError").textContent = error.message;
+    }
+  };
+}
+function escapeHtml(value) {
+  return String(value || "").replace(/[&<>"]/g, ch => ({ "&": "&", "<": "<", ">": ">", '"': """ }[ch]));
+}
+function escapeAttr(value) { return escapeHtml(value); }
+if (token) enter();
+</script>
+</body>
+</html>

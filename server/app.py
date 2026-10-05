@@ -11,7 +11,9 @@ import sqlite3
 import threading
 import time
 import zipfile
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -21,6 +23,7 @@ DB_PATH = DATA / "park.db"
 PHOTO_DIR = DATA / "photos"
 FLEET_PATH = DATA / "fleet.csv"
 TOKEN_TTL = 30 * 24 * 3600
+MSK = ZoneInfo("Europe/Moscow")
 lock = threading.Lock()
 
 app = FastAPI()
@@ -115,6 +118,8 @@ def user_from_token(token: str) -> sqlite3.Row | None:
 def current_user(request: Request) -> sqlite3.Row:
     header = request.headers.get("authorization", "")
     token = header[7:].strip() if header.lower().startswith("bearer ") else ""
+    if not token:
+        token = request.query_params.get("token", "")
     user = user_from_token(token) if token else None
     if user is None:
         raise HTTPException(401, "Нужно войти")
@@ -173,6 +178,60 @@ def write_fleet(rows: list[dict]) -> None:
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+
+
+@app.get("/")
+def panel_page():
+    return FileResponse(Path(__file__).with_name("panel.html"), media_type="text/html")
+
+
+@app.get("/api/journal")
+def journal(q: str = "", user: sqlite3.Row = Depends(current_user)):
+    text = q.strip()
+    like = f"%{text}%"
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM plates
+            WHERE deleted = 0 AND (
+                ? = '' OR number LIKE ? OR IFNULL(note, '') LIKE ? OR IFNULL(author, '') LIKE ?
+            )
+            ORDER BY ts DESC
+            LIMIT 500
+            """,
+            (text, like, like, like),
+        ).fetchall()
+    return {"plates": [plate_json(row) for row in rows]}
+
+
+@app.get("/api/stats")
+def stats(user: sqlite3.Row = Depends(current_user)):
+    now = datetime.now(MSK)
+    day_start = int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+    month_start = int(now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT ts, unauthorized FROM plates WHERE deleted = 0 AND ts >= ?",
+            (month_start,),
+        ).fetchall()
+    by_day = {}
+    day_count = 0
+    unauthorized = 0
+    for row in rows:
+        moment = datetime.fromtimestamp(row["ts"] / 1000, MSK)
+        by_day[moment.day] = by_day.get(moment.day, 0) + 1
+        if row["ts"] >= day_start:
+            day_count += 1
+        if row["unauthorized"]:
+            unauthorized += 1
+    return {
+        "day": day_count,
+        "month": len(rows),
+        "unauthorized": unauthorized,
+        "monthNumber": now.month,
+        "year": now.year,
+        "days": [{"day": day, "count": by_day.get(day, 0)} for day in range(1, now.day + 1)],
+    }
 
 
 @app.get("/api/health")
