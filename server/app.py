@@ -6,23 +6,26 @@ import hmac
 import io
 import json
 import os
+import re
 import secrets
 import sqlite3
 import threading
 import time
 import zipfile
-from datetime import datetime, timedelta
+from calendar import monthrange
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 DATA = Path(os.environ.get("DATA_DIR", "/var/lib/zhitnevo"))
 DB_PATH = DATA / "park.db"
 PHOTO_DIR = DATA / "photos"
 FLEET_PATH = DATA / "fleet.csv"
 TOKEN_TTL = 30 * 24 * 3600
+REPEAT_LOCK_MS = 22 * 60 * 60 * 1000
 MSK = ZoneInfo("Europe/Moscow")
 lock = threading.Lock()
 
@@ -329,6 +332,167 @@ def stats(date: str = "", user: sqlite3.Row = Depends(current_user)):
         "staff": [{"name": person, "count": count} for person, count in sorted(staff.items(), key=lambda item: -item[1])],
         "plates": list(reversed(day_plates)),
     }
+
+
+MONTHS = (
+    "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+)
+PLATE_SHAPES = (
+    re.compile(r"^([АВЕКМНОРСТУХ]\d{3}[АВЕКМНОРСТУХ]{2})(\d{2,3})$"),
+    re.compile(r"^([АВЕКМНОРСТУХ]{2}\d{4})(\d{2,3})$"),
+    re.compile(r"^(\d{4}[АВЕКМНОРСТУХ]{2})(\d{2,3})$"),
+)
+EXCEL_EPOCH = datetime(1899, 12, 30, tzinfo=timezone.utc)
+
+
+def xml_text(value: str) -> str:
+    return (
+        str(value)
+        .replace("&", "&" + "amp;")
+        .replace("<", "&" + "lt;")
+        .replace(">", "&" + "gt;")
+        .replace('"', "&" + "quot;")
+    )
+
+
+def format_tractor(number: str) -> str:
+    normalized = normalize_plate(number)
+    for shape in PLATE_SHAPES:
+        found = shape.match(normalized)
+        if found:
+            return f"{found.group(1)} {found.group(2)}"
+    return normalized
+
+
+def excel_serial(year: int, month: int, day: int) -> int:
+    moment = datetime(year, month, day, tzinfo=timezone.utc)
+    return (moment - EXCEL_EPOCH).days
+
+
+def workbook_xml() -> str:
+    by_plate, tractors = fleet_directory()
+    with db() as conn:
+        plates = conn.execute(
+            "SELECT uid, number, ts FROM plates WHERE deleted = 0 ORDER BY ts"
+        ).fetchall()
+
+    def resolve(number: str) -> str:
+        key = normalize_plate(number)
+        crew = crew_for(number, by_plate, tractors)
+        if crew is None:
+            return key
+        tractor = normalize_plate(crew["tractor"])
+        return tractor or key
+
+    def export_key(row: sqlite3.Row) -> str:
+        resolved = resolve(row["number"])
+        stored = normalize_plate(row["number"])
+        if stored == resolved:
+            return resolved
+        blocked = any(
+            other["uid"] != row["uid"]
+            and normalize_plate(other["number"]) == resolved
+            and abs(other["ts"] - row["ts"]) < REPEAT_LOCK_MS
+            for other in plates
+        )
+        return stored if blocked else resolved
+
+    grouped: dict[tuple[int, int], list] = {}
+    for row in plates:
+        moment = datetime.fromtimestamp(row["ts"] / 1000, MSK)
+        grouped.setdefault((moment.year, moment.month), []).append(row)
+    if not grouped:
+        now = datetime.now(MSK)
+        grouped[(now.year, now.month)] = []
+
+    parts = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<?mso-application progid="Excel.Sheet"?>',
+        '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">',
+        "<Styles>",
+        '<Style ss:ID="Title"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="14" ss:Bold="1"/></Style>',
+        '<Style ss:ID="Date"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/><NumberFormat ss:Format="dd.mmm"/></Style>',
+        '<Style ss:ID="Plate"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="14" ss:Bold="1"/></Style>',
+        '<Style ss:ID="Time"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="14"/><NumberFormat ss:Format="hh:mm:ss"/></Style>',
+        '<Style ss:ID="Info"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="12"/></Style>',
+        "</Styles>",
+    ]
+    for year, month in sorted(grouped):
+        parts.append(month_sheet(year, month, grouped[(year, month)], by_plate, export_key))
+    parts.append("</Workbook>")
+    return "".join(parts)
+
+
+def month_sheet(year: int, month: int, plates: list, by_plate: dict, export_key) -> str:
+    days = monthrange(year, month)[1]
+    buckets: dict[str, list] = {}
+    for row in plates:
+        buckets.setdefault(export_key(row), []).append(row)
+    order = sorted(buckets, key=format_tractor)
+    cells = [
+        f'<Worksheet ss:Name="{xml_text(MONTHS[month - 1] + " " + str(year))}"><Table>',
+        '<Column ss:AutoFitWidth="0" ss:Width="150"/>',
+        '<Column ss:AutoFitWidth="0" ss:Width="140"/>',
+        '<Column ss:AutoFitWidth="0" ss:Width="220"/>',
+    ]
+    cells.extend('<Column ss:AutoFitWidth="0" ss:Width="62"/>' for _ in range(days))
+    cells.append("<Row>")
+    cells.append('<Cell ss:StyleID="Title"><Data ss:Type="String">Номер тягача</Data></Cell>')
+    cells.append('<Cell ss:StyleID="Title"><Data ss:Type="String">Номер прицепа</Data></Cell>')
+    cells.append('<Cell ss:StyleID="Title"><Data ss:Type="String">ФИО</Data></Cell>')
+    for day in range(1, days + 1):
+        cells.append(f'<Cell ss:StyleID="Date"><Data ss:Type="Number">{excel_serial(year, month, day)}</Data></Cell>')
+    cells.append("</Row>")
+    for key in order:
+        visits = buckets[key]
+        crew = by_plate.get(key)
+        by_day: dict[int, list] = {}
+        for visit in visits:
+            moment = datetime.fromtimestamp(visit["ts"] / 1000, MSK)
+            by_day.setdefault(moment.day, []).append(visit)
+        tractor = format_tractor((crew["tractor"] if crew and str(crew["tractor"]).strip() else "") or key)
+        trailer = format_tractor(crew["trailer"]) if crew and str(crew["trailer"]).strip() else ""
+        driver = crew["driver"] if crew else ""
+        cells.append("<Row>")
+        cells.append(f'<Cell ss:StyleID="Plate"><Data ss:Type="String">{xml_text(tractor)}</Data></Cell>')
+        cells.append(excel_text(trailer))
+        cells.append(excel_text(driver))
+        for day in range(1, days + 1):
+            times = sorted(by_day.get(day, []), key=lambda item: item["ts"])
+            if not times:
+                cells.append("<Cell/>")
+            elif len(times) == 1:
+                moment = datetime.fromtimestamp(times[0]["ts"] / 1000, MSK)
+                seconds = moment.hour * 3600 + moment.minute * 60 + moment.second
+                cells.append(
+                    f'<Cell ss:StyleID="Time"><Data ss:Type="Number">{seconds / 86400:.8f}</Data></Cell>'
+                )
+            else:
+                clocks = []
+                for item in times:
+                    moment = datetime.fromtimestamp(item["ts"] / 1000, MSK)
+                    clocks.append(moment.strftime("%H:%M:%S"))
+                cells.append(excel_text(", ".join(clocks)))
+        cells.append("</Row>")
+    cells.append("</Table></Worksheet>")
+    return "".join(cells)
+
+
+def excel_text(value: str) -> str:
+    if not str(value).strip():
+        return "<Cell/>"
+    return f'<Cell ss:StyleID="Info"><Data ss:Type="String">{xml_text(value)}</Data></Cell>'
+
+
+@app.get("/api/export.xls")
+def export_excel(user: sqlite3.Row = Depends(current_user)):
+    payload = workbook_xml().encode("utf-8")
+    return Response(
+        content=payload,
+        media_type="application/vnd.ms-excel",
+        headers={"Content-Disposition": 'attachment; filename="TransportnyyeTekhnologii.xls"'},
+    )
 
 
 @app.get("/api/health")

@@ -116,6 +116,7 @@
     .bad { color: var(--danger); font-weight: 700; font-size: 12px; }
     .tools { display: flex; gap: 8px; margin-bottom: 12px; }
     .tools input { flex: 1; }
+    .tools button { flex: none; }
     table { width: 100%; border-collapse: collapse; }
     th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); }
     th { color: var(--muted); font-weight: 600; font-size: 13px; }
@@ -165,6 +166,7 @@
     <section id="journal">
       <div class="tools">
         <input id="search" placeholder="Поиск по номеру, заметке или оператору">
+        <button class="btn" id="excel" type="button">Excel</button>
       </div>
       <div id="list"></div>
     </section>
@@ -248,6 +250,25 @@ let searchTimer;
 document.getElementById("search").oninput = () => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(loadJournal, 250);
+};
+document.getElementById("excel").onclick = async () => {
+  const button = document.getElementById("excel");
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/export.xls", { headers: { Authorization: "Bearer " + token } });
+    if (response.status === 401) { logout(); return; }
+    if (!response.ok) throw new Error("Не удалось выгрузить таблицу");
+    const blob = await response.blob();
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "TransportnyyeTekhnologii.xls";
+    link.click();
+    URL.revokeObjectURL(link.href);
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    button.disabled = false;
+  }
 };
 async function loadJournal() {
   const q = document.getElementById("search").value.trim();
