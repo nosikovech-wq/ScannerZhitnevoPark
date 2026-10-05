@@ -234,6 +234,28 @@
     </form>
   </div>
 
+  <div id="userEdit" class="modal hidden">
+    <form class="card" id="userEditForm">
+      <h2 style="margin-top:0">Сотрудник</h2>
+      <input id="editUserId" type="hidden">
+      <label>Логин</label>
+      <input id="editUserName" autocomplete="off" required>
+      <label>Новый пароль</label>
+      <input id="editUserPass" autocomplete="off" placeholder="Пусто — не менять">
+      <label>Тип</label>
+      <select id="editUserRole">
+        <option value="operator">Оператор</option>
+        <option value="manager">Менеджер ТТ</option>
+        <option value="admin">Администратор</option>
+      </select>
+      <label>Комментарий</label>
+      <input id="editUserComment" autocomplete="off">
+      <button class="btn block" type="submit">Сохранить</button>
+      <button class="btn ghost block" id="editUserCancel" type="button">Отмена</button>
+      <div class="error" id="editUserError"></div>
+    </form>
+  </div>
+
   <div id="fleetAdd" class="modal hidden">
     <form class="card" id="fleetAddForm">
       <h2 style="margin-top:0">В справочник</h2>
@@ -767,7 +789,10 @@ async function loadUsers() {
     </form>
     <table><tr><th>Логин</th><th>Тип</th><th>Комментарий</th><th></th></tr>
     ${data.users.map(u => `<tr><td>${escapeHtml(u.username)}</td><td>${roleTitle(u.role)}</td><td>${escapeHtml(u.comment || "")}</td>
-      <td><button class="btn danger" data-user="${u.id}">Удалить</button></td></tr>`).join("")}
+      <td>
+        <button class="btn ghost" data-edit-user="${u.id}" type="button">Изменить</button>
+        <button class="btn danger" data-user="${u.id}" type="button">Удалить</button>
+      </td></tr>`).join("")}
     </table>`;
   document.getElementById("newUser").onsubmit = async (event) => {
     event.preventDefault();
@@ -782,12 +807,51 @@ async function loadUsers() {
       document.getElementById("userError").textContent = error.message;
     }
   };
+  document.querySelectorAll("[data-edit-user]").forEach(btn => btn.onclick = () => {
+    const person = data.users.find(item => String(item.id) === btn.dataset.editUser);
+    if (!person) return;
+    document.getElementById("editUserId").value = person.id;
+    document.getElementById("editUserName").value = person.username;
+    document.getElementById("editUserPass").value = "";
+    document.getElementById("editUserRole").value = person.role;
+    document.getElementById("editUserComment").value = person.comment || "";
+    document.getElementById("editUserError").textContent = "";
+    document.getElementById("userEdit").classList.remove("hidden");
+  });
   document.querySelectorAll("[data-user]").forEach(btn => btn.onclick = async () => {
     if (!confirm("Удалить сотрудника?")) return;
     try { await api("/api/users/" + btn.dataset.user, { method: "DELETE" }); loadUsers(); }
     catch (error) { alert(error.message); }
   });
 }
+document.getElementById("editUserCancel").onclick = () => document.getElementById("userEdit").classList.add("hidden");
+document.getElementById("userEditForm").onsubmit = async (event) => {
+  event.preventDefault();
+  document.getElementById("editUserError").textContent = "";
+  try {
+    await api("/api/users/" + document.getElementById("editUserId").value, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: document.getElementById("editUserName").value,
+        password: document.getElementById("editUserPass").value,
+        role: document.getElementById("editUserRole").value,
+        comment: document.getElementById("editUserComment").value
+      })
+    });
+    document.getElementById("userEdit").classList.add("hidden");
+    const me = await api("/api/me");
+    role = me.role;
+    name = me.username;
+    localStorage.setItem("park_role", role);
+    localStorage.setItem("park_name", name);
+    document.body.dataset.role = role;
+    document.getElementById("who").textContent = name + " · " + roleTitle(role);
+    loadUsers();
+  } catch (error) {
+    document.getElementById("editUserError").textContent = error.message;
+  }
+};
 async function loadFleet() {
   const data = await api("/api/fleet");
   if (role !== "admin") {

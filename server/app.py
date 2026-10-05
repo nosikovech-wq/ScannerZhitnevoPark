@@ -750,6 +750,49 @@ async def create_user(request: Request, actor: sqlite3.Row = Depends(admin_only)
     return {"ok": True}
 
 
+@app.put("/api/users/{user_id}")
+async def update_user(user_id: int, request: Request, actor: sqlite3.Row = Depends(admin_only)):
+    body = await request.json()
+    username = str(body.get("username", "")).strip()
+    password = str(body.get("password") or "")
+    role = {"admin": "admin", "manager": "manager"}.get(str(body.get("role") or ""), "operator")
+    comment = str(body.get("comment", "")).strip()
+    if len(username) < 2:
+        raise HTTPException(400, "Логин от 2 символов")
+    if password and len(password) < 4:
+        raise HTTPException(400, "Пароль от 4 символов")
+    header = request.headers.get("authorization", "")
+    token = header[7:].strip() if header.lower().startswith("bearer ") else ""
+    with db() as conn:
+        row = conn.execute("SELECT role FROM users WHERE id = ?", (user_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "Нет такого пользователя")
+        if row["role"] == "admin" and role != "admin":
+            admins = conn.execute("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").fetchone()["n"]
+            if admins <= 1:
+                raise HTTPException(400, "Нельзя снять роль с последнего администратора")
+        try:
+            if password:
+                conn.execute(
+                    "UPDATE users SET username = ?, password_hash = ?, role = ?, comment = ? WHERE id = ?",
+                    (username, hash_password(password), role, comment, user_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE users SET username = ?, role = ?, comment = ? WHERE id = ?",
+                    (username, role, comment, user_id),
+                )
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, "Такой логин уже есть")
+        if password:
+            if user_id == actor["id"] and token:
+                conn.execute("DELETE FROM sessions WHERE user_id = ? AND token != ?", (user_id, token))
+            else:
+                conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        conn.commit()
+    return {"ok": True}
+
+
 @app.delete("/api/users/{user_id}")
 def delete_user(user_id: int, actor: sqlite3.Row = Depends(admin_only)):
     if user_id == actor["id"]:
