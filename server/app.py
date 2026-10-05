@@ -145,6 +145,12 @@ def admin_only(user: sqlite3.Row = Depends(current_user)) -> sqlite3.Row:
     return user
 
 
+def writer(user: sqlite3.Row = Depends(current_user)) -> sqlite3.Row:
+    if user["role"] == "manager":
+        raise HTTPException(403, "Для этой учётки доступен только просмотр")
+    return user
+
+
 def backup_file(name: str) -> Path:
     if BACKUP_NAME.fullmatch(name) is None:
         raise HTTPException(400, "Неверное имя копии")
@@ -447,16 +453,14 @@ def stats(date: str = "", user: sqlite3.Row = Depends(current_user)):
             })
     day_paid = day_count - day_unauth
     month_paid = len(rows) - month_unauth
-    return {
+    result = {
         "date": day_start.strftime("%Y-%m-%d"),
         "day": day_count,
         "dayUnique": len(day_numbers),
         "dayUnauthorized": day_unauth,
-        "dayMoney": day_paid * DAY_PRICE,
         "month": len(rows),
         "monthUnique": len(month_numbers),
         "monthUnauthorized": month_unauth,
-        "monthMoney": month_paid * DAY_PRICE,
         "monthNumber": day_start.month,
         "year": day_start.year,
         "days": [{"day": day, "count": by_day.get(day, 0)} for day in range(1, last_day + 1)],
@@ -464,6 +468,10 @@ def stats(date: str = "", user: sqlite3.Row = Depends(current_user)):
         "staff": [{"name": person, "count": count} for person, count in sorted(staff.items(), key=lambda item: -item[1])],
         "plates": list(reversed(day_plates)),
     }
+    if user["role"] != "manager":
+        result["dayMoney"] = day_paid * DAY_PRICE
+        result["monthMoney"] = month_paid * DAY_PRICE
+    return result
 
 
 MONTHS = (
@@ -722,7 +730,7 @@ async def create_user(request: Request, actor: sqlite3.Row = Depends(admin_only)
     body = await request.json()
     username = str(body.get("username", "")).strip()
     password = str(body.get("password", ""))
-    role = "admin" if body.get("role") == "admin" else "operator"
+    role = {"admin": "admin", "manager": "manager"}.get(str(body.get("role") or ""), "operator")
     comment = str(body.get("comment", "")).strip()
     if len(username) < 2 or len(password) < 4:
         raise HTTPException(400, "Логин от 2 символов, пароль от 4")
@@ -782,7 +790,7 @@ def save_photo(uid: str, photo_b64: str) -> str | None:
 
 
 @app.post("/api/plates")
-async def upsert_plate(request: Request, user: sqlite3.Row = Depends(current_user)):
+async def upsert_plate(request: Request, user: sqlite3.Row = Depends(writer)):
     body = await request.json()
     uid = str(body.get("uid", "")).strip()
     number = str(body.get("number", "")).strip()
@@ -820,7 +828,7 @@ async def upsert_plate(request: Request, user: sqlite3.Row = Depends(current_use
 
 
 @app.delete("/api/plates/{uid}")
-def delete_plate(uid: str, user: sqlite3.Row = Depends(current_user)):
+def delete_plate(uid: str, user: sqlite3.Row = Depends(writer)):
     path = PHOTO_DIR / f"{uid}.jpg"
     if path.is_file():
         path.unlink()
@@ -841,7 +849,7 @@ def delete_plate(uid: str, user: sqlite3.Row = Depends(current_user)):
 
 
 @app.post("/api/plates/{uid}/edit")
-async def edit_plate(uid: str, request: Request, user: sqlite3.Row = Depends(current_user)):
+async def edit_plate(uid: str, request: Request, user: sqlite3.Row = Depends(writer)):
     body = await request.json()
     note = str(body.get("note") or "").strip()
     unauthorized = 1 if body.get("unauthorized") else 0

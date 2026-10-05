@@ -303,12 +303,18 @@ function show(tab) {
   if (tab === "fleet") loadFleet();
   if (tab === "data") loadBackups();
 }
+function roleTitle(value) {
+  if (value === "admin") return "Администратор";
+  if (value === "manager") return "Менеджер ТТ";
+  return "Оператор";
+}
 function enter() {
   document.getElementById("login").classList.add("hidden");
   document.getElementById("app").classList.remove("hidden");
-  document.getElementById("who").textContent = name + " · " + (role === "admin" ? "администратор" : "оператор");
+  document.getElementById("who").textContent = name + " · " + roleTitle(role);
   document.getElementById("tabUsers").classList.toggle("hidden", role !== "admin");
   document.getElementById("tabData").classList.toggle("hidden", role !== "admin");
+  document.getElementById("tabFleet").classList.toggle("hidden", role === "manager");
   show("journal");
 }
 function logout() {
@@ -535,6 +541,7 @@ async function loadJournal() {
     const add = !known && role === "admin"
       ? `<button class="btn" data-fleet="${escapeAttr(plate.number)}" type="button">В справочник</button>`
       : "";
+    const edit = role === "manager" ? "" : `<button class="btn ghost" data-edit="${plate.uid}" type="button">Изменить</button>`;
     return `<article class="row${known ? "" : " unknown"}">
       ${img}
       <div>
@@ -545,7 +552,7 @@ async function loadJournal() {
         ${plate.note ? `<div class="meta">${escapeHtml(plate.note)}</div>` : ""}
       </div>
       <div class="side">
-        <button class="btn ghost" data-edit="${plate.uid}" type="button">Изменить</button>
+        ${edit}
         ${add}
         ${del}
       </div>
@@ -698,8 +705,8 @@ async function loadStats() {
       <button class="btn ghost" id="statToday" type="button">Сегодня</button>
     </div>
     <div class="stats">
-      <div class="stat money"><b>${money(data.dayMoney)}</b><span>за день · 400 ₽ за машину</span></div>
-      <div class="stat money"><b>${money(data.monthMoney)}</b><span>за ${months[data.monthNumber - 1]} · 400 ₽ за машину</span></div>
+      ${role === "manager" ? "" : `<div class="stat money"><b>${money(data.dayMoney)}</b><span>за день · 400 ₽ за машину</span></div>
+      <div class="stat money"><b>${money(data.monthMoney)}</b><span>за ${months[data.monthNumber - 1]} · 400 ₽ за машину</span></div>`}
       <div class="stat"><b>${data.day}</b><span>записей за выбранный день</span></div>
       <div class="stat"><b>${data.dayUnique}</b><span>разных номеров за день</span></div>
       <div class="stat"><b>${data.dayUnauthorized}</b><span>несогласованных за день</span></div>
@@ -748,6 +755,7 @@ async function loadUsers() {
       <label>Тип</label>
       <select id="nr">
         <option value="operator">Оператор</option>
+        <option value="manager">Менеджер ТТ</option>
         <option value="admin">Администратор</option>
       </select>
       <label>Комментарий</label>
@@ -756,7 +764,7 @@ async function loadUsers() {
       <div class="error" id="userError"></div>
     </form>
     <table><tr><th>Логин</th><th>Тип</th><th>Комментарий</th><th></th></tr>
-    ${data.users.map(u => `<tr><td>${escapeHtml(u.username)}</td><td>${u.role === "admin" ? "Администратор" : "Оператор"}</td><td>${escapeHtml(u.comment || "")}</td>
+    ${data.users.map(u => `<tr><td>${escapeHtml(u.username)}</td><td>${roleTitle(u.role)}</td><td>${escapeHtml(u.comment || "")}</td>
       <td><button class="btn danger" data-user="${u.id}">Удалить</button></td></tr>`).join("")}
     </table>`;
   document.getElementById("newUser").onsubmit = async (event) => {
@@ -780,6 +788,14 @@ async function loadUsers() {
 }
 async function loadFleet() {
   const data = await api("/api/fleet");
+  if (role !== "admin") {
+    document.getElementById("fleet").innerHTML = `
+      <p class="sub">Справочник только для просмотра.</p>
+      <table><tr><th>Тягач</th><th>Прицеп</th><th>ФИО</th></tr>
+      ${data.rows.map(row => `<tr><td>${escapeHtml(row.tractor)}</td><td>${escapeHtml(row.trailer)}</td><td>${escapeHtml(row.driver)}</td></tr>`).join("")}
+      </table>`;
+    return;
+  }
   const body = data.rows.map((row, i) => `
     <tr>
       <td><input data-f="tractor" data-i="${i}" value="${escapeAttr(row.tractor)}"></td>
