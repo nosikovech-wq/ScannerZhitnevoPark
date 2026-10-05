@@ -19,6 +19,7 @@
       --danger: #e23b3b;
       --warn: #e0a15a;
     }
+    html { color-scheme: dark; }
     * { box-sizing: border-box; }
     body {
       margin: 0;
@@ -26,8 +27,11 @@
       color: var(--fg);
       font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
-    button, input { font: inherit; color: inherit; }
+    button, input, select, textarea { font: inherit; color: var(--fg); }
     button { cursor: pointer; }
+    button:disabled { opacity: 0.45; cursor: default; }
+    select option { background: #1c1f25; color: #f1f2f4; }
+    input[type="date"], input[type="checkbox"] { color-scheme: dark; }
     .wrap { max-width: 1100px; margin: 0 auto; padding: 20px; }
     .login {
       min-height: 100vh;
@@ -57,14 +61,21 @@
     .btn {
       border: 0;
       border-radius: 12px;
-      padding: 12px 16px;
+      height: 42px;
+      padding: 0 16px;
       background: #e8eaee;
       color: #101114;
-      font-weight: 700;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
+      line-height: 1;
     }
-    .btn.block { width: 100%; margin-top: 18px; }
-    .btn.ghost { background: var(--surface2); color: var(--fg); border: 1px solid var(--line); }
-    .btn.danger { background: var(--danger); color: white; }
+    .btn.block { width: 100%; margin-top: 10px; }
+    .btn.ghost { background: var(--surface2); color: var(--fg); border: 1px solid var(--line); font-weight: 600; }
+    .btn.danger { background: var(--danger); color: #fff; border: 0; }
+    .btn.on, .btn.ghost.on { background: var(--fg); color: #101114; border-color: var(--fg); }
     .top {
       display: flex;
       justify-content: space-between;
@@ -77,11 +88,14 @@
     .login-logo { height: 88px; width: auto; display: block; margin: 0 auto 8px; }
     .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
     .tabs button {
+      height: 40px;
       background: transparent;
       border: 1px solid var(--line);
       color: var(--muted);
       border-radius: 999px;
-      padding: 8px 14px;
+      padding: 0 16px;
+      display: inline-flex;
+      align-items: center;
     }
     .tabs button.on { background: var(--fg); color: #101114; border-color: var(--fg); }
     .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
@@ -123,18 +137,30 @@
     .bad { color: var(--danger); font-weight: 700; font-size: 12px; }
     .unknown { border-color: rgba(224, 161, 90, 0.7); }
     .miss { color: var(--warn); font-weight: 700; font-size: 12px; letter-spacing: 0.04em; }
-    .side { display: flex; flex-direction: column; gap: 8px; }
+    .side { display: flex; flex-direction: column; gap: 8px; min-width: 156px; }
+    .side .btn { width: 100%; height: 38px; }
     body[data-role="manager"] .stat.money,
     body[data-role="manager"] [data-edit] { display: none !important; }
-    .tools { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+    .tools {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .tools input, .tools select, .tools .btn { height: 42px; }
     .tools input { flex: 1; min-width: 180px; }
-    .tools input.date { flex: none; min-width: 0; width: auto; }
+    .tools input.date, .tools input[type="date"] { flex: none; width: 168px; min-width: 168px; }
     .tools button { flex: none; }
-    .tools select { width: auto; flex: none; padding: 10px 12px; }
-    .btn.on { background: var(--fg); color: #101114; }
+    .tools select { width: auto; flex: none; min-width: 160px; padding: 0 12px; }
+    #journal .tools #search { flex: 1 1 100%; }
+    #journal .tools #excel { margin-left: auto; }
+    #author { min-width: 200px; }
     table { width: 100%; border-collapse: collapse; }
-    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; color: var(--fg); }
     th { color: var(--muted); font-weight: 600; font-size: 13px; }
+    td .btn { height: 36px; margin: 0 6px 0 0; }
+    td .btn:last-child { margin-right: 0; }
     .error { color: var(--danger); min-height: 1.2em; margin-top: 8px; }
     .hidden, .modal.hidden { display: none !important; }
     .modal {
@@ -214,9 +240,9 @@
         <div class="tools">
           <button class="btn" id="downloadBackup" type="button">Скачать бэкап</button>
           <button class="btn" id="uploadBackup" type="button">Загрузить бэкап</button>
+          <button class="btn danger" id="clearBase" type="button">Очистить базу</button>
         </div>
         <input id="backupFile" type="file" accept=".zip,application/zip" class="hidden">
-        <button class="btn danger" id="clearBase" type="button">Очистить базу</button>
         <div class="error" id="dataMessage"></div>
         <h2 style="font-size:16px;margin:22px 0 8px">Ночные копии</h2>
         <p class="sub">База, справочник и фото. Восстановление заменяет текущие данные выбранной копией. Телефоны подтянут её при синхронизации.</p>
@@ -283,7 +309,7 @@
       <label>Заметка</label>
       <input id="editNote" autocomplete="off">
       <label style="display:flex;gap:8px;align-items:center;color:var(--fg)">
-        <input id="editUnauth" type="checkbox" style="width:auto"> Несогласованный выезд
+        <input id="editUnauth" type="checkbox" style="width:auto; accent-color:#e8eaee"> <span style="color:#f1f2f4">Несогласованный выезд</span>
       </label>
       <div id="editConflict" class="sub hidden"></div>
       <button class="btn block" id="editSave" type="submit">Сохранить</button>
