@@ -335,7 +335,11 @@ def startup() -> None:
 
 @app.get("/")
 def panel_page():
-    return FileResponse(Path(__file__).with_name("panel.html"), media_type="text/html")
+    return FileResponse(
+        Path(__file__).with_name("panel.html"),
+        media_type="text/html",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/logo.png")

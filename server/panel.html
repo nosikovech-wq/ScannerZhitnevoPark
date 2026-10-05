@@ -124,6 +124,8 @@
     .unknown { border-color: rgba(224, 161, 90, 0.7); }
     .miss { color: var(--warn); font-weight: 700; font-size: 12px; letter-spacing: 0.04em; }
     .side { display: flex; flex-direction: column; gap: 8px; }
+    body[data-role="manager"] .stat.money,
+    body[data-role="manager"] [data-edit] { display: none !important; }
     .tools { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
     .tools input { flex: 1; min-width: 180px; }
     .tools button { flex: none; }
@@ -309,6 +311,7 @@ function roleTitle(value) {
   return "Оператор";
 }
 function enter() {
+  document.body.dataset.role = role;
   document.getElementById("login").classList.add("hidden");
   document.getElementById("app").classList.remove("hidden");
   document.getElementById("who").textContent = name + " · " + roleTitle(role);
@@ -541,7 +544,9 @@ async function loadJournal() {
     const add = !known && role === "admin"
       ? `<button class="btn" data-fleet="${escapeAttr(plate.number)}" type="button">В справочник</button>`
       : "";
-    const edit = role === "manager" ? "" : `<button class="btn ghost" data-edit="${plate.uid}" type="button">Изменить</button>`;
+    const canChange = role === "admin" || role === "operator";
+    const edit = canChange ? `<button class="btn ghost" data-edit="${plate.uid}" type="button">Изменить</button>` : "";
+    const actions = [edit, add, del].filter(Boolean).join("");
     return `<article class="row${known ? "" : " unknown"}">
       ${img}
       <div>
@@ -551,11 +556,7 @@ async function loadJournal() {
         ${plate.unauthorized ? `<div class="bad">НЕСОГЛАСОВАННЫЙ ВЫЕЗД</div>` : ""}
         ${plate.note ? `<div class="meta">${escapeHtml(plate.note)}</div>` : ""}
       </div>
-      <div class="side">
-        ${edit}
-        ${add}
-        ${del}
-      </div>
+      ${actions ? `<div class="side">${actions}</div>` : ""}
     </article>`;
   }).join("") || `<div class="sub">Записей нет</div>`;
   journalRows = data.plates;
@@ -699,14 +700,15 @@ async function loadStats() {
   const maxDay = Math.max(1, ...data.days.map(d => d.count));
   const maxHour = Math.max(1, ...data.hours.map(h => h.count));
   const selected = Number(data.date.slice(8, 10));
+  const showMoney = role !== "manager" && data.dayMoney != null;
   document.getElementById("stats").innerHTML = `
     <div class="tools">
       <input id="statDate" type="date" value="${data.date}">
       <button class="btn ghost" id="statToday" type="button">Сегодня</button>
     </div>
     <div class="stats">
-      ${role === "manager" ? "" : `<div class="stat money"><b>${money(data.dayMoney)}</b><span>за день · 400 ₽ за машину</span></div>
-      <div class="stat money"><b>${money(data.monthMoney)}</b><span>за ${months[data.monthNumber - 1]} · 400 ₽ за машину</span></div>`}
+      ${showMoney ? `<div class="stat money"><b>${money(data.dayMoney)}</b><span>за день · 400 ₽ за машину</span></div>
+      <div class="stat money"><b>${money(data.monthMoney)}</b><span>за ${months[data.monthNumber - 1]} · 400 ₽ за машину</span></div>` : ""}
       <div class="stat"><b>${data.day}</b><span>записей за выбранный день</span></div>
       <div class="stat"><b>${data.dayUnique}</b><span>разных номеров за день</span></div>
       <div class="stat"><b>${data.dayUnauthorized}</b><span>несогласованных за день</span></div>
@@ -855,7 +857,20 @@ function escapeHtml(value) {
   });
 }
 function escapeAttr(value) { return escapeHtml(value); }
-if (token) enter();
+async function boot() {
+  if (!token) return;
+  try {
+    const me = await api("/api/me");
+    role = me.role;
+    name = me.username;
+    localStorage.setItem("park_role", role);
+    localStorage.setItem("park_name", name);
+  } catch (error) {
+    return;
+  }
+  enter();
+}
+boot();
 </script>
 </body>
 </html>
