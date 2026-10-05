@@ -80,10 +80,14 @@ def init_db() -> None:
                 author TEXT,
                 updated_at INTEGER NOT NULL,
                 deleted INTEGER NOT NULL DEFAULT 0,
-                photo_path TEXT
+                photo_path TEXT,
+                sheet_uploaded INTEGER NOT NULL DEFAULT 0
             );
             """
         )
+        cols = [info[1] for info in conn.execute("PRAGMA table_info(plates)")]
+        if "sheet_uploaded" not in cols:
+            conn.execute("ALTER TABLE plates ADD COLUMN sheet_uploaded INTEGER NOT NULL DEFAULT 0")
         admin = os.environ.get("ADMIN_USER", "admin").strip()
         password = os.environ.get("ADMIN_PASSWORD", "").strip()
         exists = conn.execute("SELECT id FROM users WHERE username = ?", (admin,)).fetchone()
@@ -134,6 +138,7 @@ def plate_json(row: sqlite3.Row) -> dict:
         "updatedAt": row["updated_at"],
         "deleted": bool(row["deleted"]),
         "hasPhoto": bool(row["photo_path"]),
+        "uploaded": bool(row["sheet_uploaded"]),
     }
 
 
@@ -281,13 +286,14 @@ async def upsert_plate(request: Request, user: sqlite3.Row = Depends(current_use
     updated = now_ms()
     photo = save_photo(uid, str(body.get("photo") or ""))
     with lock, db() as conn:
-        current = conn.execute("SELECT photo_path, author FROM plates WHERE uid = ?", (uid,)).fetchone()
+        current = conn.execute("SELECT photo_path, author, sheet_uploaded FROM plates WHERE uid = ?", (uid,)).fetchone()
         photo_path = photo or (current["photo_path"] if current else None)
         author = current["author"] if current and current["author"] else user["username"]
+        uploaded = 1 if body.get("uploaded") or (current and current["sheet_uploaded"]) else 0
         conn.execute(
             """
-            INSERT INTO plates (uid, number, ts, note, unauthorized, author, updated_at, deleted, photo_path)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
+            INSERT INTO plates (uid, number, ts, note, unauthorized, author, updated_at, deleted, photo_path, sheet_uploaded)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
             ON CONFLICT(uid) DO UPDATE SET
                 number = excluded.number,
                 ts = excluded.ts,
@@ -295,9 +301,10 @@ async def upsert_plate(request: Request, user: sqlite3.Row = Depends(current_use
                 unauthorized = excluded.unauthorized,
                 updated_at = excluded.updated_at,
                 deleted = 0,
-                photo_path = excluded.photo_path
+                photo_path = excluded.photo_path,
+                sheet_uploaded = excluded.sheet_uploaded
             """,
-            (uid, number, ts, note, unauthorized, author, updated, photo_path),
+            (uid, number, ts, note, unauthorized, author, updated, photo_path, uploaded),
         )
         conn.commit()
         row = conn.execute("SELECT * FROM plates WHERE uid = ?", (uid,)).fetchone()
@@ -376,8 +383,14 @@ async def import_backup(request: Request, user: sqlite3.Row = Depends(admin_only
             if not uid or not number:
                 skipped += 1
                 continue
-            existing = conn.execute("SELECT deleted FROM plates WHERE uid = ?", (uid,)).fetchone()
+            existing = conn.execute("SELECT deleted, sheet_uploaded FROM plates WHERE uid = ?", (uid,)).fetchone()
+            sheet_uploaded = 1 if row.get("uploaded") else 0
             if existing is not None and not existing["deleted"]:
+                if sheet_uploaded and not existing["sheet_uploaded"]:
+                    conn.execute(
+                        "UPDATE plates SET sheet_uploaded = 1, updated_at = ? WHERE uid = ?",
+                        (now_ms(), uid),
+                    )
                 skipped += 1
                 continue
             photo_name = str(row.get("photo") or "")
@@ -388,8 +401,8 @@ async def import_backup(request: Request, user: sqlite3.Row = Depends(admin_only
                 photo_path = str(dest)
             conn.execute(
                 """
-                INSERT INTO plates (uid, number, ts, note, unauthorized, author, updated_at, deleted, photo_path)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
+                INSERT INTO plates (uid, number, ts, note, unauthorized, author, updated_at, deleted, photo_path, sheet_uploaded)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
                 ON CONFLICT(uid) DO UPDATE SET
                     number = excluded.number,
                     ts = excluded.ts,
@@ -397,7 +410,8 @@ async def import_backup(request: Request, user: sqlite3.Row = Depends(admin_only
                     unauthorized = excluded.unauthorized,
                     updated_at = excluded.updated_at,
                     deleted = 0,
-                    photo_path = COALESCE(excluded.photo_path, plates.photo_path)
+                    photo_path = COALESCE(excluded.photo_path, plates.photo_path),
+                    sheet_uploaded = MAX(excluded.sheet_uploaded, plates.sheet_uploaded)
                 """,
                 (
                     uid,
@@ -408,6 +422,7 @@ async def import_backup(request: Request, user: sqlite3.Row = Depends(admin_only
                     "backup",
                     now_ms(),
                     photo_path,
+                    sheet_uploaded,
                 ),
             )
             inserted += 1

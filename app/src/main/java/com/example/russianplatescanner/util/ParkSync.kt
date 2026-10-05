@@ -110,6 +110,7 @@ object ParkSync {
             .put("timestamp", plate.timestamp)
             .put("note", plate.note ?: "")
             .put("unauthorized", plate.unauthorizedExit)
+            .put("uploaded", plate.uploaded)
         val photo = PhotoStorage.jpegBytesForUpload(plate.photoPath)
         if (photo.isNotEmpty()) {
             body.put("photo", Base64.encodeToString(photo, Base64.NO_WRAP))
@@ -222,7 +223,7 @@ object ParkSync {
             timestamp = row.optLong("timestamp"),
             note = row.optString("note").ifBlank { null },
             unauthorizedExit = row.optBoolean("unauthorized"),
-            uploaded = local?.uploaded ?: false,
+            uploaded = row.optBoolean("uploaded") || local?.uploaded == true,
             uid = uid,
             pendingSync = false
         )

@@ -380,9 +380,18 @@ private fun SettingsScreen() {
             },
             enabled = serverUrl.trim().startsWith("http"),
             modifier = Modifier.fillMaxWidth().height(48.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Fg)
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Accent,
+                contentColor = AccentFg,
+                disabledContainerColor = Surface2,
+                disabledContentColor = Muted
+            )
         ) {
-            Text(if (sessionName.isBlank()) "Войти" else "Выйти", fontWeight = FontWeight.Bold)
+            Text(
+                if (sessionName.isBlank()) "Войти" else "Выйти",
+                color = AccentFg,
+                fontWeight = FontWeight.Bold
+            )
         }
         if (sessionRole == "admin") {
             Spacer(Modifier.height(8.dp))
