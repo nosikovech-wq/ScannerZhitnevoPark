@@ -11,7 +11,7 @@ import sqlite3
 import threading
 import time
 import zipfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -205,32 +205,75 @@ def journal(q: str = "", user: sqlite3.Row = Depends(current_user)):
 
 
 @app.get("/api/stats")
-def stats(user: sqlite3.Row = Depends(current_user)):
+def stats(date: str = "", user: sqlite3.Row = Depends(current_user)):
     now = datetime.now(MSK)
-    day_start = int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
-    month_start = int(now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+    chosen = now
+    if date:
+        try:
+            year, month, day = [int(part) for part in date.split("-")]
+            chosen = datetime(year, month, day, tzinfo=MSK)
+        except ValueError:
+            raise HTTPException(400, "Неверная дата")
+    day_start = chosen.replace(hour=0, minute=0, second=0, microsecond=0)
+    next_day = day_start + timedelta(days=1)
+    month_start = day_start.replace(day=1)
+    next_month = month_start.replace(year=month_start.year + 1, month=1) if month_start.month == 12 else month_start.replace(month=month_start.month + 1)
     with db() as conn:
         rows = conn.execute(
-            "SELECT ts, unauthorized FROM plates WHERE deleted = 0 AND ts >= ?",
-            (month_start,),
+            """
+            SELECT ts, number, unauthorized, author, note
+            FROM plates WHERE deleted = 0 AND ts >= ? AND ts < ?
+            ORDER BY ts
+            """,
+            (int(month_start.timestamp() * 1000), int(next_month.timestamp() * 1000)),
         ).fetchall()
+    day_ms = int(day_start.timestamp() * 1000)
+    next_ms = int(next_day.timestamp() * 1000)
+    last_day = (next_month - timedelta(days=1)).day
     by_day = {}
+    hours = [0] * 24
+    staff = {}
+    day_numbers = set()
+    month_numbers = set()
     day_count = 0
-    unauthorized = 0
+    day_unauth = 0
+    month_unauth = 0
+    day_plates = []
     for row in rows:
         moment = datetime.fromtimestamp(row["ts"] / 1000, MSK)
         by_day[moment.day] = by_day.get(moment.day, 0) + 1
-        if row["ts"] >= day_start:
-            day_count += 1
+        month_numbers.add(row["number"])
         if row["unauthorized"]:
-            unauthorized += 1
+            month_unauth += 1
+        if day_ms <= row["ts"] < next_ms:
+            day_count += 1
+            day_numbers.add(row["number"])
+            if row["unauthorized"]:
+                day_unauth += 1
+            hours[moment.hour] += 1
+            who = (row["author"] or "").strip() or "без имени"
+            staff[who] = staff.get(who, 0) + 1
+            day_plates.append({
+                "time": moment.strftime("%H:%M"),
+                "number": row["number"],
+                "author": row["author"] or "",
+                "note": row["note"] or "",
+                "unauthorized": bool(row["unauthorized"]),
+            })
     return {
+        "date": day_start.strftime("%Y-%m-%d"),
         "day": day_count,
+        "dayUnique": len(day_numbers),
+        "dayUnauthorized": day_unauth,
         "month": len(rows),
-        "unauthorized": unauthorized,
-        "monthNumber": now.month,
-        "year": now.year,
-        "days": [{"day": day, "count": by_day.get(day, 0)} for day in range(1, now.day + 1)],
+        "monthUnique": len(month_numbers),
+        "monthUnauthorized": month_unauth,
+        "monthNumber": day_start.month,
+        "year": day_start.year,
+        "days": [{"day": day, "count": by_day.get(day, 0)} for day in range(1, last_day + 1)],
+        "hours": [{"hour": hour, "count": hours[hour]} for hour in range(24)],
+        "staff": [{"name": person, "count": count} for person, count in sorted(staff.items(), key=lambda item: -item[1])],
+        "plates": list(reversed(day_plates)),
     }
 
 

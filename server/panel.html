@@ -78,7 +78,9 @@
       padding: 8px 14px;
     }
     .tabs button.on { background: var(--fg); color: #101114; border-color: var(--fg); }
-    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+    .bar.click { cursor: pointer; }
+    .bar.on span { color: var(--fg); font-weight: 700; }
     .stat {
       background: var(--surface);
       border: 1px solid var(--line);
@@ -156,7 +158,7 @@
     <div class="tabs">
       <button type="button" data-tab="journal" class="on">Журнал</button>
       <button type="button" data-tab="stats">Статистика</button>
-      <button type="button" data-tab="users" id="tabUsers">Учётки</button>
+      <button type="button" data-tab="users" id="tabUsers">Сотрудники</button>
       <button type="button" data-tab="fleet" id="tabFleet">Справочник</button>
     </div>
 
@@ -281,32 +283,73 @@ document.getElementById("modalClose").onclick = () => document.getElementById("m
 document.getElementById("modal").onclick = (event) => {
   if (event.target.id === "modal") document.getElementById("modal").classList.add("hidden");
 };
+let statDate = "";
 async function loadStats() {
-  const data = await api("/api/stats");
-  const max = Math.max(1, ...data.days.map(d => d.count));
+  const data = await api("/api/stats" + (statDate ? "?date=" + encodeURIComponent(statDate) : ""));
+  statDate = data.date;
+  const maxDay = Math.max(1, ...data.days.map(d => d.count));
+  const maxHour = Math.max(1, ...data.hours.map(h => h.count));
+  const selected = Number(data.date.slice(8, 10));
   document.getElementById("stats").innerHTML = `
-    <div class="stats">
-      <div class="stat"><b>${data.day}</b><span>за сегодня</span></div>
-      <div class="stat"><b>${data.month}</b><span>за ${months[data.monthNumber - 1]} ${data.year}</span></div>
-      <div class="stat"><b>${data.unauthorized}</b><span>несогласованных за месяц</span></div>
+    <div class="tools">
+      <input id="statDate" type="date" value="${data.date}">
+      <button class="btn ghost" id="statToday" type="button">Сегодня</button>
     </div>
+    <div class="stats">
+      <div class="stat"><b>${data.day}</b><span>записей за выбранный день</span></div>
+      <div class="stat"><b>${data.dayUnique}</b><span>разных номеров за день</span></div>
+      <div class="stat"><b>${data.dayUnauthorized}</b><span>несогласованных за день</span></div>
+      <div class="stat"><b>${data.month}</b><span>записей за ${months[data.monthNumber - 1]}</span></div>
+      <div class="stat"><b>${data.monthUnique}</b><span>разных номеров за месяц</span></div>
+      <div class="stat"><b>${data.monthUnauthorized}</b><span>несогласованных за месяц</span></div>
+    </div>
+    <h2 style="font-size:16px;margin:22px 0 8px">Дни месяца, нажмите чтобы открыть</h2>
     <div class="bars">${data.days.map(d => `
-      <div class="bar"><span>${d.day}</span><i><span style="width:${Math.round(d.count / max * 100)}%"></span></i><span>${d.count}</span></div>
-    `).join("")}</div>`;
+      <div class="bar click ${d.day === selected ? "on" : ""}" data-day="${d.day}">
+        <span>${d.day}</span><i><span style="width:${Math.round(d.count / maxDay * 100)}%"></span></i><span>${d.count}</span>
+      </div>`).join("")}</div>
+    <h2 style="font-size:16px;margin:22px 0 8px">По часам</h2>
+    <div class="bars">${data.hours.filter(h => h.count).map(h => `
+      <div class="bar"><span>${String(h.hour).padStart(2, "0")}</span><i><span style="width:${Math.round(h.count / maxHour * 100)}%"></span></i><span>${h.count}</span></div>
+    `).join("") || `<div class="sub">За этот день записей нет</div>`}</div>
+    <h2 style="font-size:16px;margin:22px 0 8px">Кто сканировал</h2>
+    ${data.staff.map(person => `<div class="meta">${escapeHtml(person.name)} — ${person.count}</div>`).join("") || `<div class="sub">Нет данных</div>`}
+    <h2 style="font-size:16px;margin:22px 0 8px">Записи дня</h2>
+    <table><tr><th>Время</th><th>Номер</th><th>Сотрудник</th><th>Заметка</th></tr>
+    ${data.plates.map(plate => `<tr>
+      <td>${plate.time}</td>
+      <td>${escapeHtml(plate.number)}${plate.unauthorized ? " · несогл." : ""}</td>
+      <td>${escapeHtml(plate.author)}</td>
+      <td>${escapeHtml(plate.note)}</td>
+    </tr>`).join("") || `<tr><td colspan="4">Пусто</td></tr>`}
+    </table>`;
+  document.getElementById("statDate").onchange = () => {
+    statDate = document.getElementById("statDate").value;
+    loadStats();
+  };
+  document.getElementById("statToday").onclick = () => { statDate = ""; loadStats(); };
+  document.querySelectorAll("[data-day]").forEach(bar => bar.onclick = () => {
+    statDate = data.date.slice(0, 8) + String(bar.dataset.day).padStart(2, "0");
+    loadStats();
+  });
 }
 async function loadUsers() {
   const data = await api("/api/users");
   document.getElementById("users").innerHTML = `
     <form id="newUser" class="card" style="width:100%;margin-bottom:16px">
-      <div class="tools">
-        <input id="nu" placeholder="Логин" required>
-        <input id="np" placeholder="Пароль" required>
-        <select id="nr"><option value="operator">Оператор</option><option value="admin">Администратор</option></select>
-        <button class="btn" type="submit">Добавить</button>
-      </div>
+      <label>Логин</label>
+      <input id="nu" autocomplete="off" required>
+      <label>Пароль</label>
+      <input id="np" type="text" autocomplete="off" required>
+      <label>Тип</label>
+      <select id="nr">
+        <option value="operator">Оператор</option>
+        <option value="admin">Администратор</option>
+      </select>
+      <button class="btn block" type="submit">Добавить</button>
       <div class="error" id="userError"></div>
     </form>
-    <table><tr><th>Логин</th><th>Роль</th><th></th></tr>
+    <table><tr><th>Логин</th><th>Тип</th><th></th></tr>
     ${data.users.map(u => `<tr><td>${escapeHtml(u.username)}</td><td>${u.role === "admin" ? "Администратор" : "Оператор"}</td>
       <td><button class="btn danger" data-user="${u.id}">Удалить</button></td></tr>`).join("")}
     </table>`;
@@ -324,7 +367,7 @@ async function loadUsers() {
     }
   };
   document.querySelectorAll("[data-user]").forEach(btn => btn.onclick = async () => {
-    if (!confirm("Удалить учётку?")) return;
+    if (!confirm("Удалить сотрудника?")) return;
     try { await api("/api/users/" + btn.dataset.user, { method: "DELETE" }); loadUsers(); }
     catch (error) { alert(error.message); }
   });
