@@ -31,6 +31,7 @@ BACKUP_DIR = Path(os.environ.get("BACKUP_DIR", "/var/backups/zhitnevo"))
 BACKUP_NAME = re.compile(r"zhitnevo-(\d{8})-(\d{4})\.tar\.gz$")
 TOKEN_TTL = 30 * 24 * 3600
 REPEAT_LOCK_MS = 22 * 60 * 60 * 1000
+DAY_PRICE = 400
 MSK = ZoneInfo("Europe/Moscow")
 lock = threading.Lock()
 
@@ -444,14 +445,18 @@ def stats(date: str = "", user: sqlite3.Row = Depends(current_user)):
                 "note": row["note"] or "",
                 "unauthorized": bool(row["unauthorized"]),
             })
+    day_paid = day_count - day_unauth
+    month_paid = len(rows) - month_unauth
     return {
         "date": day_start.strftime("%Y-%m-%d"),
         "day": day_count,
         "dayUnique": len(day_numbers),
         "dayUnauthorized": day_unauth,
+        "dayMoney": day_paid * DAY_PRICE,
         "month": len(rows),
         "monthUnique": len(month_numbers),
         "monthUnauthorized": month_unauth,
+        "monthMoney": month_paid * DAY_PRICE,
         "monthNumber": day_start.month,
         "year": day_start.year,
         "days": [{"day": day, "count": by_day.get(day, 0)} for day in range(1, last_day + 1)],

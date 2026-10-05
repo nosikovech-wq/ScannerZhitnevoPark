@@ -94,6 +94,7 @@
       padding: 16px;
     }
     .stat b { display: block; font-size: 32px; }
+    .stat.money b { color: var(--ok); font-size: 28px; }
     .stat span { color: var(--muted); }
     .bars { margin-top: 16px; display: grid; gap: 8px; }
     .bar { display: grid; grid-template-columns: 36px 1fr 32px; gap: 8px; align-items: center; color: var(--muted); font-size: 13px; }
@@ -682,6 +683,9 @@ document.getElementById("modal").onclick = (event) => {
   if (event.target.id === "modal") document.getElementById("modal").classList.add("hidden");
 };
 let statDate = "";
+function money(value) {
+  return Number(value || 0).toLocaleString("ru-RU") + " ₽";
+}
 async function loadStats() {
   const data = await api("/api/stats" + (statDate ? "?date=" + encodeURIComponent(statDate) : ""));
   statDate = data.date;
@@ -694,6 +698,8 @@ async function loadStats() {
       <button class="btn ghost" id="statToday" type="button">Сегодня</button>
     </div>
     <div class="stats">
+      <div class="stat money"><b>${money(data.dayMoney)}</b><span>за день · 400 ₽ за машину</span></div>
+      <div class="stat money"><b>${money(data.monthMoney)}</b><span>за ${months[data.monthNumber - 1]} · 400 ₽ за машину</span></div>
       <div class="stat"><b>${data.day}</b><span>записей за выбранный день</span></div>
       <div class="stat"><b>${data.dayUnique}</b><span>разных номеров за день</span></div>
       <div class="stat"><b>${data.dayUnauthorized}</b><span>несогласованных за день</span></div>
