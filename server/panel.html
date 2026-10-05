@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Житнево Парк</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch.png">
   <style>
     :root {
       --bg: #0b0c0e;
@@ -70,6 +72,9 @@
       align-items: center;
       margin-bottom: 18px;
     }
+    .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+    .brand img { height: 56px; width: auto; display: block; }
+    .login-logo { height: 88px; width: auto; display: block; margin: 0 auto 8px; }
     .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
     .tabs button {
       background: transparent;
@@ -141,8 +146,9 @@
 <body>
   <div id="login" class="login">
     <form class="card" id="loginForm" onsubmit="return false">
-      <h1>Житнево Парк</h1>
-      <div class="sub">Панель управления</div>
+      <img class="login-logo" src="/logo.png" alt="Житнево Парк">
+      <h1 style="text-align:center">Житнево Парк</h1>
+      <div class="sub" style="text-align:center">Панель управления</div>
       <label>Логин</label>
       <input id="user" autocomplete="username" required>
       <label>Пароль</label>
@@ -154,9 +160,12 @@
 
   <div id="app" class="wrap hidden">
     <div class="top">
-      <div>
-        <h1>Житнево Парк</h1>
-        <div class="sub" id="who"></div>
+      <div class="brand">
+        <img src="/logo.png" alt="">
+        <div>
+          <h1>Житнево Парк</h1>
+          <div class="sub" id="who"></div>
+        </div>
       </div>
       <button class="btn ghost" id="logout" type="button">Выйти</button>
     </div>

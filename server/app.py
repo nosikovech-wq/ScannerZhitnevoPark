@@ -243,6 +243,21 @@ def panel_page():
     return FileResponse(Path(__file__).with_name("panel.html"), media_type="text/html")
 
 
+@app.get("/logo.png")
+def logo_file():
+    return FileResponse(Path(__file__).with_name("logo.png"), media_type="image/png")
+
+
+@app.get("/favicon.png")
+def favicon_file():
+    return FileResponse(Path(__file__).with_name("favicon.png"), media_type="image/png")
+
+
+@app.get("/apple-touch.png")
+def apple_touch_file():
+    return FileResponse(Path(__file__).with_name("apple-touch.png"), media_type="image/png")
+
+
 @app.get("/api/journal")
 def journal(q: str = "", user: sqlite3.Row = Depends(current_user)):
     text = q.strip()
