@@ -10,7 +10,6 @@ import com.example.russianplatescanner.util.FleetBook
 import com.example.russianplatescanner.util.ParkSync
 import com.example.russianplatescanner.util.PhotoStorage
 import com.example.russianplatescanner.util.REPEAT_LOCK_MS
-import com.example.russianplatescanner.util.SheetSync
 import com.example.russianplatescanner.util.formatPlateUi
 import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
@@ -31,20 +30,8 @@ class ListViewModel(
     private val _plates = MutableStateFlow<List<PlateEntity>>(emptyList())
     val plates: StateFlow<List<PlateEntity>> = _plates.asStateFlow()
 
-    private val _pendingUpload = MutableStateFlow(0)
-    val pendingUpload: StateFlow<Int> = _pendingUpload.asStateFlow()
-
     private var allPlates: List<PlateEntity> = emptyList()
     private val gate = Mutex()
-
-    fun markUploaded(uids: List<String>) {
-        if (uids.isEmpty()) return
-        viewModelScope.launch {
-            gate.withLock {
-                uids.chunked(400).forEach { plateDao.markUploaded(it) }
-            }
-        }
-    }
 
     init {
         viewModelScope.launch {
@@ -89,15 +76,9 @@ class ListViewModel(
             val saved = if (joined) {
                 "Запись добавлена к номеру ${formatPlateUi(canonical)}"
             } else {
-                "Сохранено на телефоне"
+                "Сохранено"
             }
-            val url = SheetSync.url(appContext)
-            if (!url.startsWith("https://") || !plate.uploaded) {
-                onDone(EditResult.Saved(saved))
-                return@launch
-            }
-            val synced = runCatching { SheetSync.update(url, updated, plate.number) }.getOrDefault(false)
-            onDone(EditResult.Saved(if (synced) "$saved, таблица обновлена" else saved))
+            onDone(EditResult.Saved(saved))
         }
     }
 
@@ -106,17 +87,12 @@ class ListViewModel(
             PhotoStorage.deletePhoto(plate.photoPath)
             plateDao.delete(plate)
             ParkSync.rememberDelete(appContext, plate.recordKey())
-            val url = SheetSync.url(appContext)
-            if (url.startsWith("https://")) {
-                runCatching { SheetSync.remove(url, plate) }
-            }
             onDone()
         }
     }
 
     private fun publish() {
         _plates.value = allPlates
-        _pendingUpload.value = allPlates.count { !it.uploaded }
     }
 }
 

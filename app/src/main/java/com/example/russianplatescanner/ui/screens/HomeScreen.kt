@@ -51,7 +51,6 @@ import com.example.russianplatescanner.ui.theme.Surface2
 import com.example.russianplatescanner.util.BackupStore
 import com.example.russianplatescanner.util.ParkSync
 import com.example.russianplatescanner.util.PhotoStorage
-import com.example.russianplatescanner.util.SheetSync
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -193,15 +192,15 @@ private fun HelpScreen() {
         )
         HelpCard(
             "Журнал",
-            "Поиск ищет по номеру. «Все», «Сегодня» и «Дата» фильтруют список. Карандаш меняет номер, заметку и пометку несогласованного выезда, уже выгруженная строка обновляется в таблице. «Excel» сохраняет месяц: номер тягача, прицеп и ФИО из справочника, дальше время по дням. «Онлайн» отправляет строки и фото, а в таблице после номера пишет номер прицепа и ФИО. Красная пометка — несогласованный выезд. Корзина удаляет запись с телефона, из таблицы и с Диска."
+            "Поиск ищет по номеру. Под номером видно ФИО из справочника, если номер найден. «Все», «Сегодня» и «Дата» фильтруют список. Карандаш меняет номер, заметку и пометку несогласованного выезда, изменение уходит на сервер. «Excel» сохраняет месяц на телефон. Красная пометка — несогласованный выезд. Корзина удаляет запись с телефона и с сервера."
         )
         HelpCard(
             "Этот телефон",
-            "Повтор за 22 часа и счётчики считаются только по записям этого телефона. Кнопка «Онлайн» по-прежнему отправляет журнал в общую таблицу, но чужие строки на проверку номера не влияют."
+            "Записи других телефонов приходят сами, если выполнен вход на сервер. Повтор за 22 часа и счётчики учитывают уже полученные записи."
         )
         HelpCard(
             "Настройки",
-            "Шестерёнка справа от названия. Там адрес общего сервера, вход, учётки администратора и загрузка старого бэкапа на сервер. Справочник на сервере меняет только администратор. «Очистить базу» по-прежнему чистит этот телефон и Google-таблицу."
+            "Шестерёнка справа от названия. Там адрес общего сервера, вход, сотрудники и загрузка бэкапа на сервер. Справочник на сервере меняет только администратор. «Очистить базу» удаляет записи и фото только на этом телефоне."
         )
         Spacer(Modifier.height(8.dp))
     }
@@ -227,8 +226,6 @@ private fun HelpCard(title: String, body: String) {
 private fun SettingsScreen() {
     val context = LocalContext.current
     val app = context.applicationContext as PlateApp
-    var url by remember { mutableStateOf(SheetSync.url(context)) }
-    var saved by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
     var clearing by remember { mutableStateOf(false) }
     var clearMessage by remember { mutableStateOf<String?>(null) }
@@ -412,34 +409,6 @@ private fun SettingsScreen() {
             Text(it, color = if (it.startsWith("Вход") || it.startsWith("На сервер")) Ok else Danger, fontSize = 14.sp)
         }
         Spacer(Modifier.height(16.dp))
-        Text("Ссылка на скрипт таблицы", color = Muted, fontSize = 14.sp)
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = url,
-            onValueChange = {
-                url = it
-                saved = false
-            },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            placeholder = { Text("https://script.google.com/.../exec") },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = Fg,
-                unfocusedTextColor = Fg,
-                focusedBorderColor = Accent,
-                unfocusedBorderColor = Border,
-                cursorColor = Fg,
-                focusedContainerColor = Surface,
-                unfocusedContainerColor = Surface
-            )
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Адрес веб-приложения Google. Должен заканчиваться на /exec.",
-            color = Subtle,
-            fontSize = 13.sp
-        )
-        Spacer(Modifier.height(8.dp))
         Button(
             onClick = { fleetOpen = true },
             modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -530,27 +499,6 @@ private fun SettingsScreen() {
             Spacer(Modifier.height(8.dp))
             Text(it, color = if (it.startsWith("База")) Ok else Danger, fontSize = 14.sp)
         }
-        Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = {
-                SheetSync.saveUrl(context, url)
-                saved = true
-            },
-            enabled = url.trim().startsWith("https://"),
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Ok,
-                contentColor = AccentFg,
-                disabledContainerColor = Surface2,
-                disabledContentColor = Muted
-            )
-        ) {
-            Text("Сохранить", color = AccentFg, fontWeight = FontWeight.Bold)
-        }
-        if (saved) {
-            Spacer(Modifier.height(12.dp))
-            Text("Сохранено", color = Ok, fontSize = 14.sp)
-        }
     }
 
     if (confirmClear) {
@@ -561,11 +509,10 @@ private fun SettingsScreen() {
                 scope.launch {
                     clearing = true
                     try {
-                        SheetSync.clear(SheetSync.url(context))
                         val paths = app.plateDao.allPhotoPaths()
                         PhotoStorage.deleteAll(context, paths)
                         app.plateDao.deleteAll()
-                        clearMessage = "База, фото и онлайн-таблица очищены"
+                        clearMessage = "Записи и фото на этом телефоне удалены"
                         confirmClear = false
                     } catch (e: Exception) {
                         clearMessage = e.message ?: "Не удалось очистить базу"
@@ -602,7 +549,7 @@ private fun ClearDatabaseDialog(
             Text("Очистить базу?", color = Fg, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
             Spacer(Modifier.height(8.dp))
             Text(
-                "Будут удалены все записи, фотографии и строки онлайн-таблицы. Вернуть их будет нельзя.",
+                "Будут удалены все записи и фотографии на этом телефоне. На сервере они останутся. Вернуть их на телефон можно из бэкапа.",
                 color = Muted,
                 fontSize = 14.sp
             )

@@ -151,6 +151,48 @@ def plate_json(row: sqlite3.Row) -> dict:
     }
 
 
+def normalize_plate(raw: str) -> str:
+    letters = str.maketrans({
+        "A": "А", "B": "В", "E": "Е", "K": "К", "M": "М",
+        "H": "Н", "O": "О", "P": "Р", "C": "С", "T": "Т", "Y": "У", "X": "Х",
+    })
+    text = str(raw or "").upper().translate(letters)
+    return "".join(ch for ch in text if not ch.isspace() and ch not in "-._")
+
+
+def fleet_directory() -> tuple[dict, list]:
+    by_plate = {}
+    tractors = []
+    for row in read_fleet():
+        tractor = normalize_plate(row["tractor"])
+        trailer = normalize_plate(row["trailer"])
+        if tractor:
+            by_plate.setdefault(tractor, row)
+            if len(tractor) >= 8:
+                tractors.append(tractor)
+        if trailer:
+            by_plate.setdefault(trailer, row)
+    return by_plate, tractors
+
+
+def crew_for(number: str, by_plate: dict, tractors: list) -> dict | None:
+    key = normalize_plate(number)
+    if key in by_plate:
+        return by_plate[key]
+    if len(key) < 8:
+        return None
+    body, region = key[:6], key[6:]
+    hits = [
+        tractor for tractor in tractors
+        if tractor.startswith(body)
+        and len(tractor) - 6 == len(region) + 1
+        and tractor[6:].endswith(region)
+    ]
+    if len(hits) == 1:
+        return by_plate.get(hits[0])
+    return None
+
+
 def read_fleet() -> list[dict]:
     if not FLEET_PATH.is_file():
         return []
@@ -193,6 +235,7 @@ def panel_page():
 def journal(q: str = "", user: sqlite3.Row = Depends(current_user)):
     text = q.strip()
     like = f"%{text}%"
+    by_plate, tractors = fleet_directory()
     with db() as conn:
         rows = conn.execute(
             """
@@ -205,7 +248,14 @@ def journal(q: str = "", user: sqlite3.Row = Depends(current_user)):
             """,
             (text, like, like, like),
         ).fetchall()
-    return {"plates": [plate_json(row) for row in rows]}
+    plates = []
+    for row in rows:
+        item = plate_json(row)
+        crew = crew_for(row["number"], by_plate, tractors)
+        item["driver"] = crew["driver"] if crew else ""
+        item["trailer"] = crew["trailer"] if crew else ""
+        plates.append(item)
+    return {"plates": plates}
 
 
 @app.get("/api/stats")

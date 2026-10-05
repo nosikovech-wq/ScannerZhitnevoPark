@@ -261,6 +261,7 @@ async function loadJournal() {
       ${img}
       <div>
         <div class="plate">${escapeHtml(plate.number)}</div>
+        ${plate.driver ? `<div>${escapeHtml(plate.driver)}</div>` : ""}
         <div class="meta">${when}${plate.author ? " · " + escapeHtml(plate.author) : ""}</div>
         ${plate.unauthorized ? `<div class="bad">НЕСОГЛАСОВАННЫЙ ВЫЕЗД</div>` : ""}
         ${plate.note ? `<div class="meta">${escapeHtml(plate.note)}</div>` : ""}

@@ -9,7 +9,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FileDownload
@@ -22,7 +21,6 @@ import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
@@ -40,18 +38,16 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.russianplatescanner.PlateApp
 import com.example.russianplatescanner.data.PlateEntity
 import com.example.russianplatescanner.ui.theme.*
 import com.example.russianplatescanner.util.CsvExporter
-import com.example.russianplatescanner.util.SheetSync
+import com.example.russianplatescanner.util.FleetBook
 import com.example.russianplatescanner.util.formatPlateUi
 import com.example.russianplatescanner.util.normalizePlate
 import com.example.russianplatescanner.util.startOfLocalDay
-import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -68,7 +64,6 @@ fun ListScreen(
     )
 
     val plates by viewModel.plates.collectAsState(initial = emptyList())
-    val pendingUpload by viewModel.pendingUpload.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var dayStart by remember { mutableStateOf<Long?>(null) }
     val visible = remember(plates, searchQuery, dayStart) {
@@ -81,41 +76,11 @@ fun ListScreen(
         }
     }
     var showDatePicker by remember { mutableStateOf(false) }
-    var upload by remember { mutableStateOf<SheetSync.Tick?>(null) }
-    var cancelUpload by remember { mutableStateOf(false) }
     var plateToDelete by remember { mutableStateOf<PlateEntity?>(null) }
     var plateToEdit by remember { mutableStateOf<PlateEntity?>(null) }
     var editMessage by remember { mutableStateOf<String?>(null) }
     var windowConflict by remember { mutableStateOf<Pair<PlateEntity, String>?>(null) }
     var deleting by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-
-    fun startUpload() {
-        val url = SheetSync.url(context)
-        if (!url.startsWith("https://")) {
-            upload = SheetSync.Tick(
-                phase = "Нет адреса скрипта",
-                done = 0,
-                total = 0,
-                inserted = 0,
-                skipped = 0,
-                finished = true,
-                error = "Укажите ссылку в настройках."
-            )
-            return
-        }
-        cancelUpload = false
-        upload = SheetSync.Tick("Проверка строк в таблице…", 0, 0, 0, 0)
-        scope.launch {
-            SheetSync.upload(
-                url,
-                visible,
-                { cancelUpload },
-                onProgress = { tick -> upload = tick },
-                onAccepted = { ids -> viewModel.markUploaded(ids) }
-            )
-        }
-    }
 
     Column(
         modifier = Modifier
@@ -123,15 +88,6 @@ fun ListScreen(
             .background(Bg)
             .then(if (embedded) Modifier else Modifier.statusBarsPadding())
     ) {
-        if (pendingUpload > 0) {
-            Text(
-                "Не выгружено: $pendingUpload",
-                color = Fg,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 14.sp,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-        }
         editMessage?.let {
             Text(
                 it,
@@ -196,7 +152,7 @@ fun ListScreen(
                 onClick = { CsvExporter.share(context, visible) },
                 enabled = visible.isNotEmpty(),
                 modifier = Modifier
-                    .weight(1f)
+                    .fillMaxWidth()
                     .height(48.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(Surface)
@@ -206,21 +162,6 @@ fun ListScreen(
                 Icon(Icons.Outlined.FileDownload, contentDescription = "Excel", tint = Fg, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Excel", color = Fg)
-            }
-            TextButton(
-                onClick = { startUpload() },
-                enabled = visible.isNotEmpty() && upload?.finished != false,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(48.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Surface)
-                    .border(1.dp, Border, RoundedCornerShape(12.dp)),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)
-            ) {
-                Icon(Icons.Outlined.CloudUpload, contentDescription = "Онлайн", tint = Fg, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Онлайн", color = Fg)
             }
         }
 
@@ -258,14 +199,6 @@ fun ListScreen(
                 }
             }
         }
-    }
-
-    upload?.let { tick ->
-        UploadDialog(
-            tick = tick,
-            onCancel = { cancelUpload = true },
-            onClose = { upload = null }
-        )
     }
 
     if (showDatePicker) {
@@ -307,7 +240,7 @@ fun ListScreen(
             title = { Text("Удалить запись?", color = Fg) },
             text = {
                 Text(
-                    "Номер ${formatPlateUi(target.number)} будет удалён с телефона, из онлайн-таблицы и с Диска.",
+                    "Номер ${formatPlateUi(target.number)} будет удалён с телефона и с сервера.",
                     color = Muted
                 )
             },
@@ -529,20 +462,15 @@ fun PlateItem(
                 color = Subtle,
                 fontSize = 12.sp
             )
+            FleetBook.match(plate.number)?.driver?.takeIf { it.isNotBlank() }?.let { driver ->
+                Text(text = driver, color = Muted, fontSize = 13.sp, maxLines = 1)
+            }
             if (plate.unauthorizedExit) {
                 Text(
                     text = "НЕСОГЛАСОВАННЫЙ ВЫЕЗД",
                     color = Danger,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
-                )
-            }
-            if (!plate.uploaded) {
-                Text(
-                    text = "Не выгружено",
-                    color = Fg,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold
                 )
             }
             plate.note?.let {
@@ -560,73 +488,3 @@ fun PlateItem(
 
 private const val DAY_MS = 24L * 60 * 60 * 1000
 
-@Composable
-private fun UploadDialog(
-    tick: SheetSync.Tick,
-    onCancel: () -> Unit,
-    onClose: () -> Unit
-) {
-    val fraction = if (tick.total <= 0) 0f else tick.done.toFloat() / tick.total.toFloat()
-    Dialog(onDismissRequest = { if (tick.finished) onClose() else onCancel() }) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(28.dp))
-                .background(Surface)
-                .padding(20.dp)
-        ) {
-            Text("Выгрузка в таблицу", color = Fg, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
-            Spacer(Modifier.height(12.dp))
-            Text(tick.phase, color = Fg, fontSize = 16.sp)
-            Spacer(Modifier.height(12.dp))
-            if (!tick.finished && tick.total == 0) {
-                LinearProgressIndicator(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
-                        .clip(RoundedCornerShape(8.dp)),
-                    color = Ok,
-                    trackColor = Surface2
-                )
-            } else {
-                LinearProgressIndicator(
-                    progress = { if (tick.finished && tick.total == 0 && tick.error == null) 1f else fraction },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
-                        .clip(RoundedCornerShape(8.dp)),
-                    color = if (tick.error == null) Ok else Danger,
-                    trackColor = Surface2
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                if (tick.total > 0) "${tick.done} из ${tick.total}" else "Сверка с таблицей",
-                color = Muted,
-                fontSize = 13.sp
-            )
-            if (tick.finished) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    tick.error ?: "Добавлено: ${tick.inserted}. Уже были в таблице: ${tick.skipped}.",
-                    color = if (tick.error == null) Fg else Danger,
-                    fontSize = 14.sp
-                )
-            }
-            Spacer(Modifier.height(16.dp))
-            if (tick.finished) {
-                Button(
-                    onClick = onClose,
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Ok, contentColor = AccentFg)
-                ) { Text("Закрыть", color = AccentFg, fontWeight = FontWeight.Bold, maxLines = 1) }
-            } else {
-                Button(
-                    onClick = onCancel,
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Fg, contentColor = AccentFg)
-                ) { Text("Отмена", color = AccentFg) }
-            }
-        }
-    }
-}

@@ -117,7 +117,7 @@ fun DetailScreen(
             onDismissRequest = { showDeleteDialog = false },
             containerColor = Surface,
             title = { Text("Удалить запись?", color = Fg) },
-            text = { Text("Номер и фото будут удалены с телефона, из онлайн-таблицы и с Диска.", color = Muted) },
+            text = { Text("Номер и фото будут удалены с телефона и с сервера.", color = Muted) },
             confirmButton = {
                 TextButton(
                     onClick = {
