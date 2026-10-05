@@ -133,7 +133,7 @@
 </head>
 <body>
   <div id="login" class="login">
-    <form class="card" id="loginForm">
+    <form class="card" id="loginForm" onsubmit="return false">
       <h1>Житнево Парк</h1>
       <div class="sub">Панель управления</div>
       <label>Логин</label>
@@ -384,7 +384,10 @@ function bindFleet(rows) {
   };
 }
 function escapeHtml(value) {
-  return String(value || "").replace(/[&<>"]/g, ch => ({ "&": "&", "<": "<", ">": ">", '"': """ }[ch]));
+  const names = { "&": "amp", "<": "lt", ">": "gt", '"': "quot" };
+  return String(value || "").replace(/[&<>"]/g, function (ch) {
+    return "&" + names[ch] + ";";
+  });
 }
 function escapeAttr(value) { return escapeHtml(value); }
 if (token) enter();
