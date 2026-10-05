@@ -212,6 +212,9 @@
         <input id="backupFile" type="file" accept=".zip,application/zip" class="hidden">
         <button class="btn danger" id="clearBase" type="button">Очистить базу</button>
         <div class="error" id="dataMessage"></div>
+        <h2 style="font-size:16px;margin:22px 0 8px">Ночные копии</h2>
+        <p class="sub">База, справочник и фото. Восстановление заменяет текущие данные выбранной копией. Телефоны подтянут её при синхронизации.</p>
+        <div id="backupList" class="sub">Загрузка…</div>
       </div>
     </section>
   </div>
@@ -297,6 +300,7 @@ function show(tab) {
   if (tab === "stats") loadStats();
   if (tab === "users") loadUsers();
   if (tab === "fleet") loadFleet();
+  if (tab === "data") loadBackups();
 }
 function enter() {
   document.getElementById("login").classList.add("hidden");
@@ -392,6 +396,57 @@ async function saveBlob(path, filename) {
   link.download = found ? found[1] : filename;
   link.click();
   URL.revokeObjectURL(link.href);
+}
+function backupSize(bytes) {
+  if (bytes < 1024) return bytes + " Б";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + " КБ";
+  return (bytes / 1024 / 1024).toFixed(1) + " МБ";
+}
+async function loadBackups() {
+  const box = document.getElementById("backupList");
+  try {
+    const data = await api("/api/backups");
+    box.innerHTML = data.backups.map(copy => `
+      <div class="row" style="grid-template-columns: 1fr auto">
+        <div>
+          <div>${escapeHtml(copy.when)}</div>
+          <div class="meta">${backupSize(copy.size)}</div>
+        </div>
+        <div class="side">
+          <button class="btn" data-restore="${escapeAttr(copy.name)}" type="button">Восстановить</button>
+          <button class="btn danger" data-drop-backup="${escapeAttr(copy.name)}" type="button">Удалить</button>
+        </div>
+      </div>`).join("") || `<div class="sub">Ночных копий пока нет</div>`;
+    box.querySelectorAll("[data-restore]").forEach(btn => btn.onclick = () => restoreBackup(btn.dataset.restore));
+    box.querySelectorAll("[data-drop-backup]").forEach(btn => btn.onclick = () => dropBackup(btn.dataset.dropBackup));
+  } catch (error) {
+    box.textContent = error.message;
+  }
+}
+async function restoreBackup(name) {
+  const when = [...document.querySelectorAll("[data-restore]")].find(btn => btn.dataset.restore === name);
+  const label = when ? when.closest(".row").querySelector("div").textContent.trim() : name;
+  if (!confirm("Заменить текущую базу, фото и справочник копией от " + label + "?")) return;
+  const box = document.getElementById("dataMessage");
+  box.style.color = "";
+  box.textContent = "Восстановление…";
+  try {
+    const data = await api("/api/backups/" + encodeURIComponent(name) + "/restore", { method: "POST" });
+    box.style.color = "#7dba8a";
+    box.textContent = "Восстановлена копия от " + data.when;
+    loadJournal();
+  } catch (error) {
+    box.textContent = error.message;
+  }
+}
+async function dropBackup(name) {
+  if (!confirm("Удалить эту копию? Сама база не изменится.")) return;
+  try {
+    await api("/api/backups/" + encodeURIComponent(name), { method: "DELETE" });
+    loadBackups();
+  } catch (error) {
+    document.getElementById("dataMessage").textContent = error.message;
+  }
 }
 document.getElementById("downloadBackup").onclick = async () => {
   const box = document.getElementById("dataMessage");

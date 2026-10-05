@@ -8,7 +8,10 @@ import json
 import os
 import re
 import secrets
+import shutil
 import sqlite3
+import tarfile
+import tempfile
 import threading
 import time
 import zipfile
@@ -24,6 +27,8 @@ DATA = Path(os.environ.get("DATA_DIR", "/var/lib/zhitnevo"))
 DB_PATH = DATA / "park.db"
 PHOTO_DIR = DATA / "photos"
 FLEET_PATH = DATA / "fleet.csv"
+BACKUP_DIR = Path(os.environ.get("BACKUP_DIR", "/var/backups/zhitnevo"))
+BACKUP_NAME = re.compile(r"zhitnevo-(\d{8})-(\d{4})\.tar\.gz$")
 TOKEN_TTL = 30 * 24 * 3600
 REPEAT_LOCK_MS = 22 * 60 * 60 * 1000
 MSK = ZoneInfo("Europe/Moscow")
@@ -137,6 +142,89 @@ def admin_only(user: sqlite3.Row = Depends(current_user)) -> sqlite3.Row:
     if user["role"] != "admin":
         raise HTTPException(403, "Только для администратора")
     return user
+
+
+def backup_file(name: str) -> Path:
+    if BACKUP_NAME.fullmatch(name) is None:
+        raise HTTPException(400, "Неверное имя копии")
+    path = (BACKUP_DIR / name).resolve()
+    if path.parent != BACKUP_DIR.resolve() or not path.is_file():
+        raise HTTPException(404, "Копия не найдена")
+    return path
+
+
+def backup_label(name: str) -> str:
+    found = BACKUP_NAME.fullmatch(name)
+    moment = datetime.strptime(found.group(1) + found.group(2), "%Y%m%d%H%M")
+    return moment.strftime("%d.%m.%Y %H:%M")
+
+
+@app.get("/api/backups")
+def list_backups(user: sqlite3.Row = Depends(admin_only)):
+    copies = []
+    if BACKUP_DIR.is_dir():
+        for path in BACKUP_DIR.glob("zhitnevo-*.tar.gz"):
+            if BACKUP_NAME.fullmatch(path.name) is None:
+                continue
+            copies.append({
+                "name": path.name,
+                "when": backup_label(path.name),
+                "size": path.stat().st_size,
+            })
+    copies.sort(key=lambda item: item["name"], reverse=True)
+    return {"backups": copies}
+
+
+@app.delete("/api/backups/{name}")
+def delete_backup(name: str, user: sqlite3.Row = Depends(admin_only)):
+    backup_file(name).unlink()
+    return {"ok": True}
+
+
+@app.post("/api/backups/{name}/restore")
+def restore_backup(name: str, request: Request, user: sqlite3.Row = Depends(admin_only)):
+    archive_path = backup_file(name)
+    header = request.headers.get("authorization", "")
+    token = header[7:].strip() if header.lower().startswith("bearer ") else ""
+    with tempfile.TemporaryDirectory() as folder:
+        root = Path(folder)
+        with tarfile.open(archive_path, "r:gz") as archive:
+            archive.extractall(root, filter="data")
+        snapshot = root / "park.db"
+        if not snapshot.is_file():
+            raise HTTPException(400, "В копии нет базы")
+        with lock:
+            source = sqlite3.connect(snapshot)
+            target = sqlite3.connect(DB_PATH, timeout=30)
+            try:
+                source.backup(target)
+            finally:
+                source.close()
+                target.close()
+            for old in PHOTO_DIR.glob("*"):
+                if old.is_file():
+                    old.unlink()
+            PHOTO_DIR.mkdir(parents=True, exist_ok=True)
+            photos = root / "photos"
+            if photos.is_dir():
+                for photo in photos.iterdir():
+                    if photo.is_file() and photo.suffix.lower() == ".jpg":
+                        shutil.copyfile(photo, PHOTO_DIR / photo.name)
+            fleet = root / "fleet.csv"
+            if fleet.is_file():
+                shutil.copyfile(fleet, FLEET_PATH)
+            updated = now_ms()
+            with db() as conn:
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                conn.execute("UPDATE plates SET updated_at = ?", (updated,))
+                owner = conn.execute("SELECT id FROM users WHERE username = ?", (user["username"],)).fetchone()
+                if owner is not None and token:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
+                        (token, owner["id"], int(time.time()) + TOKEN_TTL),
+                    )
+                conn.commit()
+    return {"ok": True, "when": backup_label(name)}
 
 
 def plate_json(row: sqlite3.Row) -> dict:
