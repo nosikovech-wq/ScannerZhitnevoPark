@@ -15,6 +15,7 @@
       --line: rgba(241, 242, 244, 0.12);
       --ok: #7dba8a;
       --danger: #e23b3b;
+      --warn: #e0a15a;
     }
     * { box-sizing: border-box; }
     body {
@@ -113,6 +114,9 @@
     }
     .plate { font-family: ui-monospace, monospace; font-weight: 700; font-size: 18px; }
     .meta { color: var(--muted); font-size: 13px; }
+    .bad { color: var(--danger); font-weight: 700; font-size: 12px; }
+    .unknown { border-color: rgba(224, 161, 90, 0.7); }
+    .miss { color: var(--warn); font-weight: 700; font-size: 12px; letter-spacing: 0.04em; }
     .side { display: flex; flex-direction: column; gap: 8px; }
     .tools { display: flex; gap: 8px; margin-bottom: 12px; }
     .tools input { flex: 1; }
@@ -400,11 +404,12 @@ async function loadJournal() {
     const when = new Date(plate.timestamp).toLocaleString("ru-RU");
     const img = plate.hasPhoto ? `<img src="${photoUrl(plate.uid)}" alt="">` : `<div class="ph"></div>`;
     const del = role === "admin" ? `<button class="btn danger" data-del="${plate.uid}">Удалить</button>` : "";
-    return `<article class="row">
+    const known = Boolean(plate.driver);
+    return `<article class="row${known ? "" : " unknown"}">
       ${img}
       <div>
         <div class="plate">${escapeHtml(plate.number)}</div>
-        ${plate.driver ? `<div>${escapeHtml(plate.driver)}</div>` : ""}
+        ${known ? `<div>${escapeHtml(plate.driver)}</div>` : `<div class="miss">НЕТ В СПРАВОЧНИКЕ</div>`}
         <div class="meta">${when}${plate.author ? " · " + escapeHtml(plate.author) : ""}</div>
         ${plate.unauthorized ? `<div class="bad">НЕСОГЛАСОВАННЫЙ ВЫЕЗД</div>` : ""}
         ${plate.note ? `<div class="meta">${escapeHtml(plate.note)}</div>` : ""}
