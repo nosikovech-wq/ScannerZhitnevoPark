@@ -196,6 +196,15 @@ def crew_for(number: str, by_plate: dict, tractors: list) -> dict | None:
     return None
 
 
+def resolve_number(number: str, by_plate: dict, tractors: list) -> str:
+    key = normalize_plate(number)
+    crew = crew_for(number, by_plate, tractors)
+    if crew is None:
+        return key
+    tractor = normalize_plate(crew["tractor"])
+    return tractor or key
+
+
 def read_fleet() -> list[dict]:
     if not FLEET_PATH.is_file():
         return []
@@ -378,12 +387,7 @@ def workbook_xml() -> str:
         ).fetchall()
 
     def resolve(number: str) -> str:
-        key = normalize_plate(number)
-        crew = crew_for(number, by_plate, tractors)
-        if crew is None:
-            return key
-        tractor = normalize_plate(crew["tractor"])
-        return tractor or key
+        return resolve_number(number, by_plate, tractors)
 
     def export_key(row: sqlite3.Row) -> str:
         resolved = resolve(row["number"])
@@ -711,6 +715,53 @@ def delete_plate(uid: str, user: sqlite3.Row = Depends(current_user)):
             )
         conn.commit()
     return {"ok": True}
+
+
+@app.post("/api/plates/{uid}/edit")
+async def edit_plate(uid: str, request: Request, user: sqlite3.Row = Depends(current_user)):
+    body = await request.json()
+    note = str(body.get("note") or "").strip()
+    unauthorized = 1 if body.get("unauthorized") else 0
+    by_plate, tractors = fleet_directory()
+    canonical = resolve_number(str(body.get("number") or ""), by_plate, tractors)
+    if not canonical:
+        raise HTTPException(400, "Номер не распознан")
+    with lock, db() as conn:
+        current = conn.execute("SELECT * FROM plates WHERE uid = ? AND deleted = 0", (uid,)).fetchone()
+        if current is None:
+            raise HTTPException(404, "Запись не найдена")
+        same = resolve_number(current["number"], by_plate, tractors) == canonical
+        nearby = None
+        joined = False
+        if not same:
+            others = conn.execute(
+                "SELECT uid, number, ts FROM plates WHERE deleted = 0 AND uid != ?",
+                (uid,),
+            ).fetchall()
+            for other in others:
+                if resolve_number(other["number"], by_plate, tractors) != canonical:
+                    continue
+                joined = True
+                if abs(other["ts"] - current["ts"]) < REPEAT_LOCK_MS:
+                    if nearby is None or abs(other["ts"] - current["ts"]) < abs(nearby["ts"] - current["ts"]):
+                        nearby = other
+        if nearby is not None:
+            return {
+                "ok": False,
+                "conflict": True,
+                "number": format_tractor(canonical),
+                "previousAt": nearby["ts"],
+            }
+        conn.execute(
+            "UPDATE plates SET number = ?, note = ?, unauthorized = ?, updated_at = ? WHERE uid = ?",
+            (canonical, note, unauthorized, now_ms(), uid),
+        )
+        conn.commit()
+    return {
+        "ok": True,
+        "conflict": False,
+        "message": f"Запись добавлена к номеру {format_tractor(canonical)}" if joined else "Сохранено",
+    }
 
 
 @app.get("/api/photos/{uid}")

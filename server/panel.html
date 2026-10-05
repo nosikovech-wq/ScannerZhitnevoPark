@@ -113,7 +113,7 @@
     }
     .plate { font-family: ui-monospace, monospace; font-weight: 700; font-size: 18px; }
     .meta { color: var(--muted); font-size: 13px; }
-    .bad { color: var(--danger); font-weight: 700; font-size: 12px; }
+    .side { display: flex; flex-direction: column; gap: 8px; }
     .tools { display: flex; gap: 8px; margin-bottom: 12px; }
     .tools input { flex: 1; }
     .tools button { flex: none; }
@@ -170,6 +170,7 @@
         <button class="btn" id="excel" type="button">Excel</button>
       </div>
       <div id="list"></div>
+      <div class="error" id="journalMessage"></div>
     </section>
     <section id="stats" class="hidden"></section>
     <section id="users" class="hidden"></section>
@@ -197,6 +198,25 @@
       <button class="btn danger block" id="clearConfirm" type="submit" disabled>Очистить</button>
       <button class="btn ghost block" id="clearCancel" type="button">Отмена</button>
       <div class="error" id="clearError"></div>
+    </form>
+  </div>
+
+  <div id="editModal" class="modal hidden">
+    <form class="card" id="editForm">
+      <h2 style="margin-top:0">Запись</h2>
+      <div id="editWhen" class="sub"></div>
+      <label>Номер</label>
+      <input id="editNumber" autocomplete="off" required>
+      <label>Заметка</label>
+      <input id="editNote" autocomplete="off">
+      <label style="display:flex;gap:8px;align-items:center;color:var(--fg)">
+        <input id="editUnauth" type="checkbox" style="width:auto"> Несогласованный выезд
+      </label>
+      <div id="editConflict" class="sub hidden"></div>
+      <button class="btn block" id="editSave" type="submit">Сохранить</button>
+      <button class="btn danger block hidden" id="editDrop" type="button">Удалить ошибочную</button>
+      <button class="btn ghost block" id="editCancel" type="button">Отмена</button>
+      <div class="error" id="editError"></div>
     </form>
   </div>
 
@@ -389,16 +409,96 @@ async function loadJournal() {
         ${plate.unauthorized ? `<div class="bad">НЕСОГЛАСОВАННЫЙ ВЫЕЗД</div>` : ""}
         ${plate.note ? `<div class="meta">${escapeHtml(plate.note)}</div>` : ""}
       </div>
-      <div class="side">${del}</div>
+      <div class="side">
+        <button class="btn ghost" data-edit="${plate.uid}" type="button">Изменить</button>
+        ${del}
+      </div>
     </article>`;
   }).join("") || `<div class="sub">Записей нет</div>`;
+  journalRows = data.plates;
   list.querySelectorAll("img").forEach(img => img.onclick = () => openPhoto(img.src));
+  list.querySelectorAll("[data-edit]").forEach(btn => btn.onclick = () => {
+    const plate = journalRows.find(item => item.uid === btn.dataset.edit);
+    if (plate) openEdit(plate);
+  });
   list.querySelectorAll("[data-del]").forEach(btn => btn.onclick = async () => {
     if (!confirm("Удалить запись и фото?")) return;
     await api("/api/plates/" + encodeURIComponent(btn.dataset.del), { method: "DELETE" });
     loadJournal();
   });
 }
+let journalRows = [];
+let editUid = "";
+function prettyPlate(value) {
+  const compact = String(value || "").replace(/\s+/g, "");
+  const patterns = [
+    /^([А-ЯЁA-Z]\d{3}[А-ЯЁA-Z]{2})(\d{2,3})$/i,
+    /^([А-ЯЁA-Z]{2}\d{4})(\d{2,3})$/i,
+    /^(\d{4}[А-ЯЁA-Z]{2})(\d{2,3})$/i
+  ];
+  for (const pattern of patterns) {
+    const found = compact.match(pattern);
+    if (found) return found[1].toUpperCase() + " " + found[2];
+  }
+  return value || "";
+}
+function openEdit(plate) {
+  editUid = plate.uid;
+  document.getElementById("editNumber").value = prettyPlate(plate.number);
+  document.getElementById("editNote").value = plate.note || "";
+  document.getElementById("editUnauth").checked = !!plate.unauthorized;
+  document.getElementById("editWhen").textContent = new Date(plate.timestamp).toLocaleString("ru-RU");
+  document.getElementById("editConflict").classList.add("hidden");
+  document.getElementById("editConflict").textContent = "";
+  document.getElementById("editSave").classList.remove("hidden");
+  document.getElementById("editDrop").classList.add("hidden");
+  document.getElementById("editError").textContent = "";
+  document.getElementById("editModal").classList.remove("hidden");
+}
+document.getElementById("editCancel").onclick = () => document.getElementById("editModal").classList.add("hidden");
+document.getElementById("editForm").onsubmit = async (event) => {
+  event.preventDefault();
+  document.getElementById("editError").textContent = "";
+  try {
+    const data = await api("/api/plates/" + encodeURIComponent(editUid) + "/edit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        number: document.getElementById("editNumber").value,
+        note: document.getElementById("editNote").value,
+        unauthorized: document.getElementById("editUnauth").checked
+      })
+    });
+    if (data.conflict) {
+      const when = new Date(data.previousAt).toLocaleString("ru-RU");
+      document.getElementById("editConflict").textContent =
+        "Номер " + data.number + " уже поставлен " + when + ". Между записями меньше 22 часов, поэтому время ошибочного номера не переносится. Ошибочная запись будет удалена.";
+      document.getElementById("editConflict").classList.remove("hidden");
+      document.getElementById("editSave").classList.add("hidden");
+      document.getElementById("editDrop").classList.remove("hidden");
+      return;
+    }
+    document.getElementById("editModal").classList.add("hidden");
+    const box = document.getElementById("journalMessage");
+    box.style.color = "#7dba8a";
+    box.textContent = data.message || "Сохранено";
+    loadJournal();
+  } catch (error) {
+    document.getElementById("editError").textContent = error.message;
+  }
+};
+document.getElementById("editDrop").onclick = async () => {
+  try {
+    await api("/api/plates/" + encodeURIComponent(editUid), { method: "DELETE" });
+    document.getElementById("editModal").classList.add("hidden");
+    const box = document.getElementById("journalMessage");
+    box.style.color = "#7dba8a";
+    box.textContent = "Ошибочная запись удалена";
+    loadJournal();
+  } catch (error) {
+    document.getElementById("editError").textContent = error.message;
+  }
+};
 function openPhoto(src) {
   document.getElementById("modalImg").src = src;
   document.getElementById("modal").classList.remove("hidden");
