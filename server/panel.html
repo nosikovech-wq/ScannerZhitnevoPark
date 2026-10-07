@@ -787,10 +787,8 @@ async function loadStats() {
       ${showMoney ? `<div class="stat money"><b>${money(data.dayMoney)}</b><span>за день · 400 ₽ за машину</span></div>
       <div class="stat money"><b>${money(data.monthMoney)}</b><span>за ${months[data.monthNumber - 1]} · 400 ₽ за машину</span></div>` : ""}
       <div class="stat"><b>${data.day}</b><span>записей за выбранный день</span></div>
-      <div class="stat"><b>${data.dayUnique}</b><span>разных номеров за день</span></div>
       <div class="stat"><b>${data.dayUnauthorized}</b><span>несогласованных за день</span></div>
       <div class="stat"><b>${data.month}</b><span>записей за ${months[data.monthNumber - 1]}</span></div>
-      <div class="stat"><b>${data.monthUnique}</b><span>разных номеров за месяц</span></div>
       <div class="stat"><b>${data.monthUnauthorized}</b><span>несогласованных за месяц</span></div>
     </div>
     <h2 style="font-size:16px;margin:22px 0 8px">Дни месяца, нажмите чтобы открыть</h2>
