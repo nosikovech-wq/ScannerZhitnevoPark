@@ -310,6 +310,10 @@ def resolve_number(number: str, by_plate: dict, tractors: list) -> str:
     return tractor or key
 
 
+def fleet_sort_key(row: dict) -> str:
+    return re.sub(r"\s+", "", str(row.get("tractor") or "")).casefold()
+
+
 def read_fleet() -> list[dict]:
     if not FLEET_PATH.is_file():
         return []
@@ -324,17 +328,22 @@ def read_fleet() -> list[dict]:
         if not parts[0] and not parts[1]:
             continue
         rows.append({"tractor": parts[0], "trailer": parts[1], "driver": parts[2]})
+    rows.sort(key=fleet_sort_key)
     return rows
 
 
 def write_fleet(rows: list[dict]) -> None:
     lines = ["Номер тягача;Номер прицепа;ФИО"]
+    stored = []
     for row in rows:
         tractor = str(row.get("tractor", "")).strip()
         trailer = str(row.get("trailer", "")).strip()
         driver = str(row.get("driver", "")).strip()
         if tractor or trailer:
-            lines.append(f"{tractor};{trailer};{driver}")
+            stored.append({"tractor": tractor, "trailer": trailer, "driver": driver})
+    stored.sort(key=fleet_sort_key)
+    for row in stored:
+        lines.append(f"{row['tractor']};{row['trailer']};{row['driver']}")
     FLEET_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

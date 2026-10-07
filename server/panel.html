@@ -907,65 +907,69 @@ document.getElementById("userEditForm").onsubmit = async (event) => {
 };
 async function loadFleet() {
   const data = await api("/api/fleet");
-  if (role !== "admin") {
-    document.getElementById("fleet").innerHTML = `
-      <p class="sub">Справочник только для просмотра.</p>
-      <table><tr><th>Тягач</th><th>Прицеп</th><th>ФИО</th></tr>
-      ${data.rows.map(row => `<tr><td>${escapeHtml(row.tractor)}</td><td>${escapeHtml(row.trailer)}</td><td>${escapeHtml(row.driver)}</td></tr>`).join("")}
-      </table>`;
-    return;
-  }
-  const body = data.rows.map((row, i) => `
-    <tr>
-      <td><input data-f="tractor" data-i="${i}" value="${escapeAttr(row.tractor)}"></td>
-      <td><input data-f="trailer" data-i="${i}" value="${escapeAttr(row.trailer)}"></td>
-      <td><input data-f="driver" data-i="${i}" value="${escapeAttr(row.driver)}"></td>
-      <td><button class="btn danger" data-drop="${i}" type="button">Удалить</button></td>
-    </tr>`).join("");
+  const rows = data.rows.slice().sort((a, b) =>
+    (a.tractor || "").localeCompare(b.tractor || "", "ru", { sensitivity: "base", numeric: true })
+  );
+  const editable = role === "admin";
   document.getElementById("fleet").innerHTML = `
-    <div class="tools"><button class="btn" id="addCrew" type="button">Добавить</button><button class="btn" id="saveFleet" type="button">Сохранить</button></div>
-    <table><tr><th>Тягач</th><th>Прицеп</th><th>ФИО</th><th></th></tr><tbody id="fleetBody">${body}</tbody></table>
+    ${editable ? "" : `<p class="sub">Справочник только для просмотра.</p>`}
+    <div class="tools">
+      <input id="fleetSearch" placeholder="Номер тягача, прицеп или ФИО">
+      ${editable ? `<button class="btn" id="addCrew" type="button">Добавить</button><button class="btn" id="saveFleet" type="button">Сохранить</button>` : ""}
+    </div>
+    <table><tr><th>Тягач</th><th>Прицеп</th><th>ФИО</th>${editable ? "<th></th>" : ""}</tr><tbody id="fleetBody"></tbody></table>
     <div class="error" id="fleetError"></div>`;
-  const rows = data.rows.slice();
-  const paint = () => { window._fleet = rows; loadFleetFrom(rows); };
+  const paint = () => {
+    const query = document.getElementById("fleetSearch").value.trim().toLocaleLowerCase("ru");
+    const shown = rows.map((row, index) => ({ row, index })).filter(item => {
+      if (!query) return true;
+      return [item.row.tractor, item.row.trailer, item.row.driver].join(" ").toLocaleLowerCase("ru").includes(query);
+    });
+    document.getElementById("fleetBody").innerHTML = shown.map(({ row, index }) => editable
+      ? `<tr>
+          <td><input data-f="tractor" data-i="${index}" value="${escapeAttr(row.tractor)}"></td>
+          <td><input data-f="trailer" data-i="${index}" value="${escapeAttr(row.trailer)}"></td>
+          <td><input data-f="driver" data-i="${index}" value="${escapeAttr(row.driver)}"></td>
+          <td><button class="btn danger" data-drop="${index}" type="button">Удалить</button></td>
+        </tr>`
+      : `<tr><td>${escapeHtml(row.tractor)}</td><td>${escapeHtml(row.trailer)}</td><td>${escapeHtml(row.driver)}</td></tr>`
+    ).join("") || `<tr><td colspan="${editable ? 4 : 3}">Ничего не найдено</td></tr>`;
+    if (!editable) return;
+    document.querySelectorAll("#fleetBody input").forEach(input => {
+      input.oninput = () => { rows[input.dataset.i][input.dataset.f] = input.value; };
+    });
+    document.querySelectorAll("[data-drop]").forEach(btn => btn.onclick = () => {
+      rows.splice(Number(btn.dataset.drop), 1);
+      paint();
+    });
+  };
+  document.getElementById("fleetSearch").oninput = paint;
+  if (editable) {
+    document.getElementById("addCrew").onclick = () => {
+      document.getElementById("fleetSearch").value = "";
+      rows.unshift({ tractor: "", trailer: "", driver: "" });
+      paint();
+      const first = document.querySelector("#fleetBody input");
+      if (first) first.focus();
+    };
+    document.getElementById("saveFleet").onclick = async () => {
+      try {
+        await api("/api/fleet", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rows })
+        });
+        rows.sort((a, b) => (a.tractor || "").localeCompare(b.tractor || "", "ru", { sensitivity: "base", numeric: true }));
+        paint();
+        document.getElementById("fleetError").style.color = "#7dba8a";
+        document.getElementById("fleetError").textContent = "Сохранено";
+      } catch (error) {
+        document.getElementById("fleetError").textContent = error.message;
+      }
+    };
+  }
   window._fleet = rows;
-  bindFleet(rows);
-}
-function loadFleetFrom(rows) {
-  document.getElementById("fleetBody").innerHTML = rows.map((row, i) => `
-    <tr>
-      <td><input data-f="tractor" data-i="${i}" value="${escapeAttr(row.tractor)}"></td>
-      <td><input data-f="trailer" data-i="${i}" value="${escapeAttr(row.trailer)}"></td>
-      <td><input data-f="driver" data-i="${i}" value="${escapeAttr(row.driver)}"></td>
-      <td><button class="btn danger" data-drop="${i}" type="button">Удалить</button></td>
-    </tr>`).join("");
-  bindFleet(rows);
-}
-function bindFleet(rows) {
-  document.querySelectorAll("#fleetBody input").forEach(input => {
-    input.oninput = () => { rows[input.dataset.i][input.dataset.f] = input.value; };
-  });
-  document.querySelectorAll("[data-drop]").forEach(btn => btn.onclick = () => {
-    rows.splice(Number(btn.dataset.drop), 1);
-    loadFleetFrom(rows);
-  });
-  document.getElementById("addCrew").onclick = () => {
-    rows.unshift({ tractor: "", trailer: "", driver: "" });
-    loadFleetFrom(rows);
-  };
-  document.getElementById("saveFleet").onclick = async () => {
-    try {
-      await api("/api/fleet", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows })
-      });
-      document.getElementById("fleetError").style.color = "#7dba8a";
-      document.getElementById("fleetError").textContent = "Сохранено";
-    } catch (error) {
-      document.getElementById("fleetError").textContent = error.message;
-    }
-  };
+  paint();
 }
 function escapeHtml(value) {
   const names = { "&": "amp", "<": "lt", ">": "gt", '"': "quot" };
