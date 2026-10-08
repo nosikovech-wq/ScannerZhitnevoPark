@@ -319,17 +319,11 @@ function Update-Partner {
 }
 
 function Ensure-PartnerLogo {
+    $beside = Join-Path $PSScriptRoot "dornet.png"
+    if (Test-Path $beside) { return [Drawing.Image]::FromFile($beside) }
     $path = Join-Path $AppDir "dornet.png"
-    if (-not (Test-Path $path)) {
-        $req = [System.Net.HttpWebRequest]::Create("https://front.dornet.ru/favicon/android-icon-192x192.png")
-        $req.Timeout = 15000
-        $res = $req.GetResponse()
-        $input = $res.GetResponseStream()
-        $output = [IO.File]::Create($path)
-        $input.CopyTo($output)
-        $output.Close(); $input.Close(); $res.Close()
-    }
-    return [Drawing.Image]::FromFile($path)
+    if (Test-Path $path) { return [Drawing.Image]::FromFile($path) }
+    return $null
 }
 
 function Import-PartnerSeed {
