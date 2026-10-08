@@ -106,7 +106,7 @@ object ParkColors {
     const val LINE = 0x33FFFFFFL
 }
 
-private val RU = Locale("ru", "RU")
+private val RU = Locale.forLanguageTag("ru-RU")
 private val MONTHS = arrayOf(
     "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
     "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",

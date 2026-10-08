@@ -164,7 +164,6 @@ private fun CameraLayer(
     }
 }
 
-@OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 private fun RtspBackdrop(url: String, report: (String) -> Unit) {
     val context = LocalContext.current

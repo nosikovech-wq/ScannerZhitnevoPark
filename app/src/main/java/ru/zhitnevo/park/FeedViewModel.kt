@@ -118,26 +118,60 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun weatherLoop() {
-        val url = "https://api.open-meteo.com/v1/forecast?latitude=55.34233&longitude=37.91464" +
-            "&current=temperature_2m,weather_code&timezone=Europe%2FMoscow"
+        val url = "https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=55.34233&lon=37.91464"
         while (true) {
-            try {
-                val body = Net.partner.newCall(Request.Builder().url(url).build()).execute().use { res ->
+            val ok = try {
+                val body = Net.partner.newCall(
+                    Request.Builder()
+                        .url(url)
+                        .header("User-Agent", "ZhitnevoPark/1.0 github.com/nosikovech-wq")
+                        .build(),
+                ).execute().use { res ->
+                    if (!res.isSuccessful) error("погода ${res.code}")
                     res.body?.string().orEmpty()
                 }
-                val current = JSONObject(body).getJSONObject("current")
-                val code = current.getInt("weather_code")
-                val temp = current.getDouble("temperature_2m").roundToInt()
+                val now = JSONObject(body)
+                    .getJSONObject("properties")
+                    .getJSONArray("timeseries")
+                    .getJSONObject(0)
+                    .getJSONObject("data")
+                val temp = now.getJSONObject("instant")
+                    .getJSONObject("details")
+                    .getDouble("air_temperature")
+                    .roundToInt()
+                val symbol = now.optJSONObject("next_1_hours")?.optJSONObject("summary")?.optString("symbol_code")
+                    ?: now.optJSONObject("next_6_hours")?.optJSONObject("summary")?.optString("symbol_code")
+                    ?: "cloudy"
+                val code = symbolToCode(symbol)
                 sky.value = Sky(
                     temp = "${if (temp > 0) "+" else ""}$temp°",
                     code = code,
                     label = weatherLabel(code),
                 )
+                true
             } catch (_: Exception) {
-                if (sky.value.code < 0) sky.value = Sky(label = "нет данных")
+                if (sky.value.code < 0) sky.value = Sky(label = "Житнево")
+                false
             }
-            delay(15 * 60_000)
+            delay(if (ok) 20 * 60_000L else 60_000L)
         }
+    }
+
+    private fun symbolToCode(symbol: String): Int = when (symbol.substringBefore("_")) {
+        "clearsky" -> 0
+        "fair" -> 1
+        "partlycloudy" -> 2
+        "cloudy" -> 3
+        "fog" -> 45
+        "lightrain", "rain", "lightrainshowers", "rainshowers" -> 61
+        "heavyrain", "heavyrainshowers" -> 65
+        "lightsleet", "sleet", "heavysleet", "lightsleetshowers", "sleetshowers" -> 67
+        "lightsnow", "snow", "lightsnowshowers", "snowshowers" -> 71
+        "heavysnow", "heavysnowshowers" -> 75
+        "rainandthunder", "heavyrainandthunder", "rainshowersandthunder", "heavyrainshowersandthunder",
+        "sleetandthunder", "snowandthunder",
+        -> 95
+        else -> 3
     }
 
     private fun weatherLabel(code: Int) = when (code) {
