@@ -437,7 +437,27 @@ function Draw-Card($g, [int]$x, [int]$y, [int]$w, [int]$h, [string]$label, [stri
     if ($clipW -lt 8) { $clipW = 8 }
     if ($clipH -lt 8) { $clipH = 8 }
     $g.SetClip((New-Object Drawing.Rectangle -ArgumentList $clipX, $clipY, $clipW, $clipH))
-    $maxW = [single]($w - 20)
+    $maxW = [single]($w - 24)
+    if ($script:large) {
+        $font = $script:labelFont
+        $fmt = New-Object Drawing.StringFormat
+        $fmt.Trimming = "EllipsisCharacter"
+        $lineH = $font.GetHeight($g)
+        $labelBox = $g.MeasureString($label, $font, [int]$maxW)
+        $valueBox = $g.MeasureString($value, $font, [int]$maxW)
+        $labelH = [Math]::Min([single]$labelBox.Height, ($lineH * 2))
+        $valueH = [Math]::Min([single]$valueBox.Height, ($lineH * 2))
+        $block = $labelH + 6 + $valueH
+        $ty = $y + (($h - $block) / 2)
+        if ($ty -lt ($y + 6)) { $ty = $y + 6 }
+        $labelRect = New-Object Drawing.RectangleF -ArgumentList ([single]($x + 12)), ([single]$ty), $maxW, $labelH
+        $valueRect = New-Object Drawing.RectangleF -ArgumentList ([single]($x + 12)), ([single]($ty + $labelH + 6)), $maxW, $valueH
+        $g.DrawString($label, $font, $script:mutedBrush, $labelRect, $fmt)
+        $g.DrawString($value, $font, $valueBrush, $valueRect, $fmt)
+        $fmt.Dispose()
+        $g.Restore($state)
+        return
+    }
     $labelFont = Fit-Font $g $label $script:labelFont $maxW
     $valueFont = Fit-Font $g $value $script:valueFont $maxW
     $lh = $labelFont.GetHeight($g)
@@ -452,6 +472,23 @@ function Draw-Card($g, [int]$x, [int]$y, [int]$w, [int]$h, [string]$label, [stri
     $g.Restore($state)
 }
 
+function Draw-Band($g, $cards, [int]$y, [int]$h, $pen, [bool]$partner) {
+    $ui = $script:ui
+    $n = $cards.Count
+    if ($n -lt 1) { return }
+    $gap = [int]$ui.Gap
+    $avail = [int]$script:form.ClientSize.Width - [int]$ui.Left - [int]$ui.Right - ($gap * ($n - 1))
+    $cw = [int]($avail / $n)
+    if ($cw -lt 40) { $cw = 40 }
+    $x = [int]$ui.Left
+    foreach ($card in $cards) {
+        $brush = $script:fgBrush
+        if ($partner) { $brush = $script:partnerBrush }
+        if ($card.Money) { $brush = $script:okBrush }
+        Draw-Card $g $x $y $cw $h ([string]$card.L) ([string]$card.V) $brush $pen
+        $x += ($cw + $gap)
+    }
+}
 function Draw-Row($g, [single]$top, [int]$mode) {
     $w = [single]$script:form.ClientSize.Width
     $ui = $script:ui
@@ -495,6 +532,18 @@ function Draw-Row($g, [single]$top, [int]$mode) {
         $ds.Add([pscustomobject]@{ L = "Прачечная, сегодня/мес."; V = [string]$partner.LaundryMoney; Money = $true })
         $ds.Add([pscustomobject]@{ L = "Всего за день"; V = [string]$partner.TotalDay; Money = $true })
         $ds.Add([pscustomobject]@{ L = "Всего за месяц"; V = [string]$partner.TotalMonth; Money = $true })
+    }
+    if ($script:large) {
+        $y1 = [int]($top + $ui.CardTop)
+        $y2 = $y1 + [int]$ui.CardH + [int]$ui.RowGap
+        $logo = [int]$ui.Logo
+        $ourLogoY = $y1 + [int](($ui.CardH - $logo) / 2)
+        $dsLogoY = $y2 + [int](($ui.CardH - $logo) / 2)
+        if ($script:logo) { $g.DrawImage($script:logo, 12, $ourLogoY, $logo, $logo) }
+        Draw-Band $g $our $y1 ([int]$ui.CardH) $script:cardPen $false
+        if ($script:partnerLogo) { $g.DrawImage($script:partnerLogo, 12, $dsLogoY, $logo, $logo) }
+        Draw-Band $g $ds $y2 ([int]$ui.CardH) $script:partnerPen $true
+        return
     }
     $slots = $our.Count + $ds.Count
     $mid = [int]$ui.Mid
@@ -679,8 +728,8 @@ $script:collapsed = $false
 
 function Update-BarChrome {
     if ($script:large) {
-        $logo = 68
-        $script:ui = [pscustomobject]@{ Bar = 122; CardH = 104; CardTop = 9; Label = 18; Value = 24; Close = 16; Logo = $logo; Left = 96; Mid = (24 + $logo); Right = 76; Gap = 8; Chip = 300 }
+        $logo = 56
+        $script:ui = [pscustomobject]@{ Bar = 216; CardH = 96; CardTop = 8; RowGap = 8; Label = 18; Value = 18; Close = 16; Logo = $logo; Left = 84; Mid = (24 + $logo); Right = 76; Gap = 10; Chip = 300 }
     } else {
         $logo = 44
         $script:ui = [pscustomobject]@{ Bar = 78; CardH = 62; CardTop = 8; Label = 13; Value = 16; Close = 15; Logo = $logo; Left = 70; Mid = (24 + $logo); Right = 64; Gap = 8; Chip = 200 }
@@ -689,7 +738,9 @@ function Update-BarChrome {
     if ($script:valueFont) { $script:valueFont.Dispose() }
     if ($script:closeFont) { $script:closeFont.Dispose() }
     $script:labelFont = New-Object Drawing.Font "Segoe UI", $script:ui.Label, ([Drawing.FontStyle]::Regular), ([Drawing.GraphicsUnit]::Pixel)
-    $script:valueFont = New-Object Drawing.Font "Segoe UI", $script:ui.Value, ([Drawing.FontStyle]::Bold), ([Drawing.GraphicsUnit]::Pixel)
+    $valueStyle = [Drawing.FontStyle]::Bold
+    if ($script:large) { $valueStyle = [Drawing.FontStyle]::Regular }
+    $script:valueFont = New-Object Drawing.Font "Segoe UI", $script:ui.Value, $valueStyle, ([Drawing.GraphicsUnit]::Pixel)
     $script:closeFont = New-Object Drawing.Font "Segoe UI", $script:ui.Close, ([Drawing.FontStyle]::Regular), ([Drawing.GraphicsUnit]::Pixel)
 }
 function Apply-BarLayout {
@@ -824,9 +875,11 @@ $form.Add_Paint({
     Draw-Row $g $shift $current
     Draw-Row $g ($shift - $h) $next
     $g.Restore($state)
-    $logo = [int]$script:ui.Logo
-    $ly = [int](($h - $logo) / 2)
-    if ($script:logo) { $g.DrawImage($script:logo, 14, $ly, $logo, $logo) }
+    if (-not $script:large) {
+        $logo = [int]$script:ui.Logo
+        $ly = [int](($h - $logo) / 2)
+        if ($script:logo) { $g.DrawImage($script:logo, 14, $ly, $logo, $logo) }
+    }
     Draw-SideButtons $g $w $h
 })
 
