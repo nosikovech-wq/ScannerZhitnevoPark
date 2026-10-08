@@ -35,6 +35,10 @@ $script:partnerAt = [datetime]::MinValue
 $script:partnerLogo = $null
 $script:clock = [Diagnostics.Stopwatch]::StartNew()
 $script:lastTick = 0
+$script:slide = 0
+$script:slideY = 0.0
+$script:sliding = $false
+$script:slideHold = Get-Date
 
 function Protect-Text([string]$plain) {
     if ([string]::IsNullOrEmpty($plain)) { return "" }
@@ -150,6 +154,15 @@ function Noun([int]$n, [string]$one, [string]$few, [string]$many) {
 function Money([int]$n) {
     return ("{0:N0}" -f $n) + " ₽"
 }
+function Money-Pair([int]$a, [int]$b) {
+    return ("{0} · {1}" -f (Money $a), (Money $b))
+}
+function Format-Average([int]$count, [int]$day) {
+    if ($day -lt 1) { $day = 1 }
+    $value = [math]::Round(([double]$count) / $day, 1)
+    $text = $value.ToString("0.#", [Globalization.CultureInfo]::GetCultureInfo("ru-RU"))
+    return "$text в день"
+}
 function Invoke-Partner([string]$method, [string]$url, $bodyObj, [string]$bearer) {
     $req = [System.Net.HttpWebRequest]::Create($url)
     $req.Method = $method
@@ -218,6 +231,15 @@ function Get-ServiceCounts([string]$from, [string]$to, [string]$token) {
     return @{ Shower = $shower; Laundry = $laundry }
 }
 
+function Fetch-PartnerData([string]$token, [string]$today, [string]$tomorrow, [string]$monthStart, [string]$nextMonth) {
+    $dayPark = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/order/list?limit=1&start=0&dateFrom=$today&dateTo=$tomorrow&pointType=p" $null $token
+    $monthPark = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/order/list?limit=1&start=0&dateFrom=$monthStart&dateTo=$nextMonth&pointType=p" $null $token
+    $daySvc = Get-ServiceCounts $today $tomorrow $token
+    $monthSvc = Get-ServiceCounts $monthStart $nextMonth $token
+    $reviews = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/review/count" $null $token
+    $latest = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/review/list?limit=1&start=0" $null $token
+    return [pscustomobject]@{ DayPark = $dayPark; MonthPark = $monthPark; DaySvc = $daySvc; MonthSvc = $monthSvc; Reviews = $reviews; Latest = $latest }
+}
 function Update-Partner {
     if (-not $script:cfg.partnerUser -or -not $script:cfg.partnerSecret) {
         $script:partner = [pscustomobject]@{ Ready = $false; Status = "Нет входа Дорожной сети" }
@@ -236,35 +258,53 @@ function Update-Partner {
         $tomorrow = $now.AddDays(1).ToString("yyyy-MM-dd")
         $monthStart = (Get-Date -Year $now.Year -Month $now.Month -Day 1).ToString("yyyy-MM-dd")
         $nextMonth = (Get-Date -Year $now.Year -Month $now.Month -Day 1).AddMonths(1).ToString("yyyy-MM-dd")
-        $reviews = $null
         try {
-            $dayPark = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/order/list?limit=1&start=0&dateFrom=$today&dateTo=$tomorrow&pointType=p" $null $script:partnerToken
-            $monthPark = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/order/list?limit=1&start=0&dateFrom=$monthStart&dateTo=$nextMonth&pointType=p" $null $script:partnerToken
-            $daySvc = Get-ServiceCounts $today $tomorrow $script:partnerToken
-            $monthSvc = Get-ServiceCounts $monthStart $nextMonth $script:partnerToken
-            $reviews = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/review/count" $null $script:partnerToken
+            $data = Fetch-PartnerData $script:partnerToken $today $tomorrow $monthStart $nextMonth
         } catch {
             if ($_.Exception.Message -match "^401") {
                 $script:partnerToken = ""
                 $login = Invoke-Partner "POST" "https://back.dornet.ru/api/account/auth" @{ login = [string]$script:cfg.partnerUser; password = $pass } ""
                 $script:partnerToken = [string]$login.token
-                $dayPark = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/order/list?limit=1&start=0&dateFrom=$today&dateTo=$tomorrow&pointType=p" $null $script:partnerToken
-                $monthPark = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/order/list?limit=1&start=0&dateFrom=$monthStart&dateTo=$nextMonth&pointType=p" $null $script:partnerToken
-                $daySvc = Get-ServiceCounts $today $tomorrow $script:partnerToken
-                $monthSvc = Get-ServiceCounts $monthStart $nextMonth $script:partnerToken
-                $reviews = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/review/count" $null $script:partnerToken
+                $data = Fetch-PartnerData $script:partnerToken $today $tomorrow $monthStart $nextMonth
             } else { throw }
         }
-        $mark = [math]::Round([double]$reviews.average, 2).ToString("0.00")
-        $dayCount = [int]$dayPark.total
-        $monthCount = [int]$monthPark.total
+        $dayCount = [int]$data.DayPark.total
+        $monthCount = [int]$data.MonthPark.total
+        $showerDay = [int]$data.DaySvc.Shower
+        $showerMonth = [int]$data.MonthSvc.Shower
+        $laundryDay = [int]$data.DaySvc.Laundry
+        $laundryMonth = [int]$data.MonthSvc.Laundry
+        $parkDayMoney = $dayCount * 350
+        $parkMonthMoney = $monthCount * 350
+        $showerDayMoney = $showerDay * 180
+        $showerMonthMoney = $showerMonth * 180
+        $laundryDayMoney = $laundryDay * 180
+        $laundryMonthMoney = $laundryMonth * 180
+        $reviewDate = "нет"
+        $latest = $null
+        if ($null -ne $data.Latest.items) {
+            if ($data.Latest.items -is [System.Array]) {
+                if ($data.Latest.items.Length -gt 0) { $latest = $data.Latest.items[0] }
+            } else { $latest = $data.Latest.items }
+        }
+        if ($latest -and $latest.date_created) {
+            $raw = [string]$latest.date_created
+            if ($raw.Length -ge 10) { $reviewDate = $raw.Substring(0, 10).Replace("-", ".") }
+        }
         $script:partner = [pscustomobject]@{
             Ready = $true
             Today = ("{0} {1}" -f $dayCount, (Noun $dayCount "машина" "машины" "машин"))
             Month = ("{0} {1}" -f $monthCount, (Noun $monthCount "машина" "машины" "машин"))
-            Shower = ("{0} сегодня · {1}" -f [int]$daySvc.Shower, [int]$monthSvc.Shower)
-            Laundry = ("{0} сегодня · {1}" -f [int]$daySvc.Laundry, [int]$monthSvc.Laundry)
-            Reviews = ("{0} · {1}" -f $mark, [int]$reviews.count)
+            Avg = (Format-Average $monthCount $now.Day)
+            Shower = ("{0} · {1}" -f $showerDay, $showerMonth)
+            Laundry = ("{0} · {1}" -f $laundryDay, $laundryMonth)
+            ReviewDate = $reviewDate
+            ParkDayMoney = (Money $parkDayMoney)
+            ParkMonthMoney = (Money $parkMonthMoney)
+            ShowerMoney = (Money-Pair $showerDayMoney $showerMonthMoney)
+            LaundryMoney = (Money-Pair $laundryDayMoney $laundryMonthMoney)
+            TotalDay = (Money ($parkDayMoney + $showerDayMoney + $laundryDayMoney))
+            TotalMonth = (Money ($parkMonthMoney + $showerMonthMoney + $laundryMonthMoney))
             Status = ""
         }
         $script:partnerAt = Get-Date
@@ -334,13 +374,29 @@ function Build-View {
     }
     $s = $script:stats
     $month = $months[[Math]::Max(0, [int]$s.monthNumber - 1)]
+    $dayNum = 1
+    if ($s.date -and ([string]$s.date).Length -ge 10) { $dayNum = [int]([string]$s.date).Substring(8, 2) }
+    $last = "нет"
+    $first = $null
+    if ($null -ne $s.plates) {
+        if ($s.plates -is [System.Array]) {
+            if ($s.plates.Length -gt 0) { $first = $s.plates[0] }
+        } else { $first = $s.plates }
+    }
+    if ($first -and $first.time) { $last = [string]$first.time }
+    $dayMoney = "—"
+    $monthMoney = "—"
+    if ($null -ne $s.dayMoney -and "$($s.dayMoney)" -ne "") { $dayMoney = Money ([int]$s.dayMoney) }
+    if ($null -ne $s.monthMoney -and "$($s.monthMoney)" -ne "") { $monthMoney = Money ([int]$s.monthMoney) }
     $script:view = [pscustomobject]@{
         Ready = $true
         Day = ("{0} {1}" -f [int]$s.day, (Noun $s.day "машина" "машины" "машин"))
-        DayMoney = $(if ($null -ne $s.dayMoney) { Money ([int]$s.dayMoney) } else { "" })
+        DayMoney = $dayMoney
         Month = $month
         MonthCount = ("{0} {1}" -f [int]$s.month, (Noun $s.month "машина" "машины" "машин"))
-        MonthMoney = $(if ($null -ne $s.monthMoney) { Money ([int]$s.monthMoney) } else { "" })
+        MonthMoney = $monthMoney
+        Avg = (Format-Average ([int]$s.month) $dayNum)
+        Last = $last
         Offline = [bool]$script:offline
         Status = [string]$script:status
     }
@@ -358,8 +414,80 @@ function Draw-Card($g, [int]$x, [int]$y, [int]$w, [int]$h, [string]$label, [stri
     $g.FillPath($script:cardFill, $path)
     $g.DrawPath($pen, $path)
     $path.Dispose()
-    $g.DrawString($label, $script:labelFont, $script:mutedBrush, ($x + 14), ($y + 8))
-    $g.DrawString($value, $script:valueFont, $valueBrush, ($x + 14), ($y + 28))
+    $state = $g.Save()
+    $g.SetClip((New-Object Drawing.Rectangle ($x + 10), ($y + 2), ($w - 16), ($h - 4)))
+    $g.DrawString($label, $script:labelFont, $script:mutedBrush, ($x + 12), ($y + 8))
+    $g.DrawString($value, $script:valueFont, $valueBrush, ($x + 12), ($y + 28))
+    $g.Restore($state)
+}
+
+function Draw-Row($g, [single]$top, [int]$mode) {
+    $w = [single]$script:form.ClientSize.Width
+    $gap = 8
+    $left = 70
+    $rightPad = 52
+    $view = $script:view
+    $partner = $script:partner
+    $our = New-Object System.Collections.Generic.List[object]
+    $ds = New-Object System.Collections.Generic.List[object]
+    if (-not $view -or -not $view.Ready) {
+        $text = "Подключение…"
+        if ($view -and $view.Status) { $text = [string]$view.Status }
+        $our.Add([pscustomobject]@{ L = "Житнево Парк"; V = $text; Money = $false })
+    } elseif ($mode -eq 0) {
+        $dayLabel = "Сегодня"
+        if ($view.Offline) { $dayLabel = "Сегодня, нет связи" }
+        $our.Add([pscustomobject]@{ L = $dayLabel; V = [string]$view.Day; Money = $false })
+        $our.Add([pscustomobject]@{ L = "За месяц"; V = [string]$view.MonthCount; Money = $false })
+        $our.Add([pscustomobject]@{ L = "Среднее за день"; V = [string]$view.Avg; Money = $false })
+        $our.Add([pscustomobject]@{ L = "Последняя машина"; V = [string]$view.Last; Money = $false })
+    } else {
+        $our.Add([pscustomobject]@{ L = "Сумма за сегодня"; V = [string]$view.DayMoney; Money = $true })
+        $our.Add([pscustomobject]@{ L = "Сумма за месяц"; V = [string]$view.MonthMoney; Money = $true })
+    }
+    if (-not $partner -or -not $partner.Ready) {
+        $note = "Подключение…"
+        if ($partner -and $partner.Status) { $note = [string]$partner.Status }
+        $ds.Add([pscustomobject]@{ L = "Дорожная сеть"; V = $note; Money = $false })
+    } elseif ($mode -eq 0) {
+        $ds.Add([pscustomobject]@{ L = "Стоянка сегодня"; V = [string]$partner.Today; Money = $false })
+        $ds.Add([pscustomobject]@{ L = "Стоянка за месяц"; V = [string]$partner.Month; Money = $false })
+        $ds.Add([pscustomobject]@{ L = "Среднее за день"; V = [string]$partner.Avg; Money = $false })
+        $ds.Add([pscustomobject]@{ L = "Душ, сегодня/мес."; V = [string]$partner.Shower; Money = $false })
+        $ds.Add([pscustomobject]@{ L = "Прачечная, сегодня/мес."; V = [string]$partner.Laundry; Money = $false })
+        $ds.Add([pscustomobject]@{ L = "Последний отзыв"; V = [string]$partner.ReviewDate; Money = $false })
+    } else {
+        $ds.Add([pscustomobject]@{ L = "Стоянка сегодня"; V = [string]$partner.ParkDayMoney; Money = $true })
+        $ds.Add([pscustomobject]@{ L = "Стоянка за месяц"; V = [string]$partner.ParkMonthMoney; Money = $true })
+        $ds.Add([pscustomobject]@{ L = "Душ, сегодня/мес."; V = [string]$partner.ShowerMoney; Money = $true })
+        $ds.Add([pscustomobject]@{ L = "Прачечная, сегодня/мес."; V = [string]$partner.LaundryMoney; Money = $true })
+        $ds.Add([pscustomobject]@{ L = "Всего за день"; V = [string]$partner.TotalDay; Money = $true })
+        $ds.Add([pscustomobject]@{ L = "Всего за месяц"; V = [string]$partner.TotalMonth; Money = $true })
+    }
+    $slots = $our.Count + $ds.Count
+    $mid = 68
+    $avail = [int]$w - $left - $mid - $rightPad - ($gap * [Math]::Max(0, $slots - 1))
+    $cw = [int]($avail / [Math]::Max(1, $slots))
+    if ($cw -lt 88) { $cw = 88 }
+    $step = $cw + $gap
+    $y = [int]($top + 8)
+    $x = $left
+    foreach ($card in $our) {
+        $brush = $script:fgBrush
+        if ($card.Money) { $brush = $script:okBrush }
+        Draw-Card $g $x $y $cw 62 ([string]$card.L) ([string]$card.V) $brush $script:cardPen
+        $x += $step
+    }
+    $g.DrawLine($script:partnerPen, $x, ($y + 8), $x, ($y + 54))
+    $x += 12
+    if ($script:partnerLogo) { $g.DrawImage($script:partnerLogo, [int]$x, ($y + 8), 44, 44) }
+    $x += 52
+    foreach ($card in $ds) {
+        $brush = $script:partnerBrush
+        if ($card.Money) { $brush = $script:okBrush }
+        Draw-Card $g $x $y $cw 62 ([string]$card.L) ([string]$card.V) $brush $script:partnerPen
+        $x += $step
+    }
 }
 
 function Set-Autostart([bool]$on) {
@@ -507,7 +635,7 @@ $script:partnerBrush = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(
 $script:partnerPen = New-Object Drawing.Pen ([Drawing.Color]::FromArgb(160, 2, 84, 147)), 1.4
 $script:badBrush = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(226, 59, 59))
 $script:labelFont = New-Object Drawing.Font "Segoe UI", 13, ([Drawing.FontStyle]::Regular), ([Drawing.GraphicsUnit]::Pixel)
-$script:valueFont = New-Object Drawing.Font "Segoe UI", 18, ([Drawing.FontStyle]::Bold), ([Drawing.GraphicsUnit]::Pixel)
+$script:valueFont = New-Object Drawing.Font "Segoe UI", 16, ([Drawing.FontStyle]::Bold), ([Drawing.GraphicsUnit]::Pixel)
 $script:closeBrush = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(154, 160, 170))
 $script:closeFont = New-Object Drawing.Font "Segoe UI", 16, ([Drawing.FontStyle]::Regular), ([Drawing.GraphicsUnit]::Pixel)
 $script:form = $form
@@ -519,7 +647,7 @@ $miTop = $menu.Items.Add("Поверх всех окон")
 $miTop.Checked = $true
 $miExit = $menu.Items.Add("Закрыть")
 $form.ContextMenuStrip = $menu
-$miRefresh.Add_Click({ Update-Stats })
+$miRefresh.Add_Click({ $script:partnerAt = [datetime]::MinValue; Update-Stats; Update-Partner })
 $miSetup.Add_Click({ if (Show-Setup) { Update-Stats } })
 $miTop.Add_Click({ $miTop.Checked = -not $miTop.Checked; $form.TopMost = $miTop.Checked })
 $miExit.Add_Click({ $form.Close() })
@@ -550,64 +678,15 @@ $form.Add_Paint({
     $g.FillRectangle($script:cardBrush, 0, 0, $w, $h)
     $g.DrawLine($script:linePen, 0, 0, $w, 0)
     $g.DrawLine($script:linePen, 0, ($h - 1), $w, ($h - 1))
+    $state = $g.Save()
+    $g.SetClip((New-Object Drawing.Rectangle 0, 0, ([int]$w - 46), [int]$h))
+    $shift = [single]$script:slideY
+    $current = [int]$script:slide
+    $next = 1 - $current
+    Draw-Row $g $shift $current
+    Draw-Row $g ($shift - $h) $next
+    $g.Restore($state)
     if ($script:logo) { $g.DrawImage($script:logo, 14, 14, 44, 48) }
-    $view = $script:view
-    $partner = $script:partner
-    $ourCount = 0
-    if ($view -and $view.Ready) { $ourCount = $(if ($view.DayMoney) { 4 } else { 2 }) }
-    $partnerCount = 5
-    $gap = 8
-    $left = 70
-    $mid = 58
-    $rightPad = 52
-    $slots = $ourCount + $partnerCount
-    if ($ourCount -eq 0) { $slots = $partnerCount; $mid = 0 }
-    $avail = [int]$w - $left - $mid - $rightPad - ($gap * [Math]::Max(0, $slots - 1))
-    $cw = [int]($avail / [Math]::Max(1, $slots))
-    if ($cw -lt 96) { $cw = 96 }
-    $step = $cw + $gap
-    $x = $left
-    if ($ourCount -eq 0) {
-        $text = "Подключение…"
-        if ($view -and $view.Status) { $text = [string]$view.Status }
-        $g.DrawString($text, $script:valueFont, $script:badBrush, 78, 24)
-        $x = 360
-    } else {
-        $dayLabel = "Сегодня"
-        if ($view.Offline) { $dayLabel = "Сегодня, нет связи" }
-        Draw-Card $g $x 8 $cw 62 $dayLabel ([string]$view.Day) $script:fgBrush $script:cardPen
-        $x += $step
-        if ($view.DayMoney) {
-            Draw-Card $g $x 8 $cw 62 "Сумма за сегодня" ([string]$view.DayMoney) $script:okBrush $script:cardPen
-            $x += $step
-            Draw-Card $g $x 8 $cw 62 ([string]$view.Month) ([string]$view.MonthCount) $script:fgBrush $script:cardPen
-            $x += $step
-            Draw-Card $g $x 8 $cw 62 ("Сумма за " + $view.Month.ToLower()) ([string]$view.MonthMoney) $script:okBrush $script:cardPen
-            $x += $step
-        } else {
-            Draw-Card $g $x 8 $cw 62 ([string]$view.Month) ([string]$view.MonthCount) $script:fgBrush $script:cardPen
-            $x += $step
-        }
-    }
-    $g.DrawLine($script:partnerPen, $x, 16, $x, 62)
-    $x += 12
-    if ($script:partnerLogo) { $g.DrawImage($script:partnerLogo, $x, 16, 44, 44) }
-    $x += 52
-    if (-not $partner -or -not $partner.Ready) {
-        $note = "Подключение…"
-        if ($partner -and $partner.Status) { $note = [string]$partner.Status }
-        Draw-Card $g $x 8 280 62 "Дорожная сеть" $note $script:partnerBrush $script:partnerPen
-    } else {
-        Draw-Card $g $x 8 $cw 62 "Стоянка сегодня" ([string]$partner.Today) $script:partnerBrush $script:partnerPen
-        $x += $step
-        Draw-Card $g $x 8 $cw 62 "Стоянка за месяц" ([string]$partner.Month) $script:partnerBrush $script:partnerPen
-        $x += $step
-        Draw-Card $g $x 8 $cw 62 "Душ" ([string]$partner.Shower) $script:partnerBrush $script:partnerPen
-        $x += $step
-        Draw-Card $g $x 8 $cw 62 "Прачечная" ([string]$partner.Laundry) $script:partnerBrush $script:partnerPen
-        $x += $step
-        Draw-Card $g $x 8 $cw 62 "Отзывы" ([string]$partner.Reviews) $script:partnerBrush $script:partnerPen
-    }
     $g.DrawString("×", $script:closeFont, $script:closeBrush, ($w - 30), (($h / 2) - 12))
 })
 
@@ -619,10 +698,29 @@ $partnerPoll = New-Object Windows.Forms.Timer
 $partnerPoll.Interval = 600000
 $partnerPoll.Add_Tick({ Update-Partner })
 $partnerPoll.Start()
+$slideTimer = New-Object Windows.Forms.Timer
+$slideTimer.Interval = 30
+$slideTimer.Add_Tick({
+    if (-not $script:form) { return }
+    if (-not $script:sliding) {
+        if (((Get-Date) - $script:slideHold).TotalSeconds -ge 8) { $script:sliding = $true }
+        return
+    }
+    $script:slideY += ($script:form.ClientSize.Height / 18.0)
+    if ($script:slideY -ge $script:form.ClientSize.Height) {
+        $script:slideY = 0
+        $script:sliding = $false
+        $script:slide = 1 - [int]$script:slide
+        $script:slideHold = Get-Date
+    }
+    $script:form.Invalidate()
+})
+$slideTimer.Start()
 $form.Add_Shown({ Update-Stats; Update-Partner })
 [void]$form.ShowDialog()
 $poll.Stop()
 $partnerPoll.Stop()
+$slideTimer.Stop()
 if ($script:logo) { $script:logo.Dispose() }
 $script:cardBrush.Dispose(); $script:cardFill.Dispose(); $script:cardPen.Dispose()
 $script:linePen.Dispose(); $script:mutedBrush.Dispose(); $script:fgBrush.Dispose(); $script:okBrush.Dispose(); $script:badBrush.Dispose()
