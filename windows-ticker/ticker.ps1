@@ -343,6 +343,7 @@ function Import-PartnerSeed {
         token = [string]$script:cfg.token
         role = [string]$script:cfg.role
         autostart = [bool]$script:cfg.autostart
+        large = [bool]$script:large
         partnerUser = [string]$seed.username
         partnerSecret = (Protect-Text ([string]$seed.password))
     }
@@ -359,6 +360,7 @@ function Ensure-PartnerAccount {
         token = [string]$script:cfg.token
         role = [string]$script:cfg.role
         autostart = [bool]$script:cfg.autostart
+        large = [bool]$script:large
         partnerUser = "a8a155f617"
         partnerSecret = (Protect-Text "c1081a1507")
     }
@@ -422,16 +424,17 @@ function Draw-Card($g, [int]$x, [int]$y, [int]$w, [int]$h, [string]$label, [stri
     $clipW = [int]($w - 16)
     $clipH = [int]($h - 4)
     $g.SetClip((New-Object Drawing.Rectangle -ArgumentList $clipX, $clipY, $clipW, $clipH))
-    $g.DrawString($label, $script:labelFont, $script:mutedBrush, ($x + 12), ($y + 8))
-    $g.DrawString($value, $script:valueFont, $valueBrush, ($x + 12), ($y + 28))
+    $g.DrawString($label, $script:labelFont, $script:mutedBrush, ($x + 12), ($y + $script:ui.LabelDy))
+    $g.DrawString($value, $script:valueFont, $valueBrush, ($x + 12), ($y + $script:ui.ValueDy))
     $g.Restore($state)
 }
 
 function Draw-Row($g, [single]$top, [int]$mode) {
     $w = [single]$script:form.ClientSize.Width
-    $gap = 8
-    $left = 70
-    $rightPad = 52
+    $ui = $script:ui
+    $gap = $ui.Gap
+    $left = $ui.Left
+    $rightPad = $ui.Right
     $view = $script:view
     $partner = $script:partner
     $our = New-Object System.Collections.Generic.List[object]
@@ -471,27 +474,28 @@ function Draw-Row($g, [single]$top, [int]$mode) {
         $ds.Add([pscustomobject]@{ L = "Всего за месяц"; V = [string]$partner.TotalMonth; Money = $true })
     }
     $slots = $our.Count + $ds.Count
-    $mid = 68
+    $mid = $ui.Mid
     $avail = [int]$w - $left - $mid - $rightPad - ($gap * [Math]::Max(0, $slots - 1))
     $cw = [int]($avail / [Math]::Max(1, $slots))
     if ($cw -lt 88) { $cw = 88 }
     $step = $cw + $gap
-    $y = [int]($top + 8)
+    $y = [int]($top + $ui.CardTop)
     $x = $left
     foreach ($card in $our) {
         $brush = $script:fgBrush
         if ($card.Money) { $brush = $script:okBrush }
-        Draw-Card $g $x $y $cw 62 ([string]$card.L) ([string]$card.V) $brush $script:cardPen
+        Draw-Card $g $x $y $cw $ui.CardH ([string]$card.L) ([string]$card.V) $brush $script:cardPen
         $x += $step
     }
-    $g.DrawLine($script:partnerPen, $x, ($y + 8), $x, ($y + 54))
+    $g.DrawLine($script:partnerPen, $x, ($y + 10), $x, ($y + $ui.CardH - 10))
     $x += 12
-    if ($script:partnerLogo) { $g.DrawImage($script:partnerLogo, [int]$x, ($y + 8), 44, 44) }
-    $x += 52
+    $logoY = $y + [int](($ui.CardH - $ui.Logo) / 2)
+    if ($script:partnerLogo) { $g.DrawImage($script:partnerLogo, [int]$x, $logoY, $ui.Logo, $ui.Logo) }
+    $x += ($ui.Logo + 12)
     foreach ($card in $ds) {
         $brush = $script:partnerBrush
         if ($card.Money) { $brush = $script:okBrush }
-        Draw-Card $g $x $y $cw 62 ([string]$card.L) ([string]$card.V) $brush $script:partnerPen
+        Draw-Card $g $x $y $cw $ui.CardH ([string]$card.L) ([string]$card.V) $brush $script:partnerPen
         $x += $step
     }
 }
@@ -589,6 +593,7 @@ function Show-Setup {
             token = ""
             role = ""
             autostart = [bool]$auto.Checked
+            large = [bool]$script:large
             partnerUser = $keptUser
             partnerSecret = $keptPartner
         }
@@ -608,6 +613,8 @@ function Show-Setup {
 }
 
 $script:cfg = Read-Config
+$script:large = $false
+if ($script:cfg -and $script:cfg.large) { $script:large = [bool]$script:cfg.large }
 if (-not $script:cfg -or -not $script:cfg.username -or -not $script:cfg.secret) {
     if (-not (Show-Setup)) { return }
 }
@@ -640,35 +647,64 @@ $script:okBrush = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(125, 
 $script:partnerBrush = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(126, 186, 224))
 $script:partnerPen = New-Object Drawing.Pen ([Drawing.Color]::FromArgb(160, 2, 84, 147)), 1.4
 $script:badBrush = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(226, 59, 59))
-$script:labelFont = New-Object Drawing.Font "Segoe UI", 13, ([Drawing.FontStyle]::Regular), ([Drawing.GraphicsUnit]::Pixel)
-$script:valueFont = New-Object Drawing.Font "Segoe UI", 16, ([Drawing.FontStyle]::Bold), ([Drawing.GraphicsUnit]::Pixel)
 $script:closeBrush = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(154, 160, 170))
-$script:closeFont = New-Object Drawing.Font "Segoe UI", 16, ([Drawing.FontStyle]::Regular), ([Drawing.GraphicsUnit]::Pixel)
 $script:form = $form
 $script:collapsed = $false
 
-function Set-BarCollapsed([bool]$on) {
-    $script:collapsed = $on
-    $screen = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-    if ($on) {
-        $script:form.Bounds = New-Object Drawing.Rectangle -ArgumentList $screen.X, $screen.Y, 188, 78
+function Update-BarChrome {
+    if ($script:large) {
+        $script:ui = [pscustomobject]@{ Bar = 118; CardH = 98; CardTop = 10; LabelDy = 14; ValueDy = 48; Label = 18; Value = 28; Close = 18; Logo = 72; Left = 100; Mid = 100; Right = 58; Gap = 10; Chip = 270 }
     } else {
-        $script:form.Bounds = New-Object Drawing.Rectangle -ArgumentList $screen.X, $screen.Y, $screen.Width, 78
+        $script:ui = [pscustomobject]@{ Bar = 78; CardH = 62; CardTop = 8; LabelDy = 8; ValueDy = 28; Label = 13; Value = 16; Close = 16; Logo = 44; Left = 70; Mid = 68; Right = 52; Gap = 8; Chip = 188 }
+    }
+    if ($script:labelFont) { $script:labelFont.Dispose() }
+    if ($script:valueFont) { $script:valueFont.Dispose() }
+    if ($script:closeFont) { $script:closeFont.Dispose() }
+    $script:labelFont = New-Object Drawing.Font "Segoe UI", $script:ui.Label, ([Drawing.FontStyle]::Regular), ([Drawing.GraphicsUnit]::Pixel)
+    $script:valueFont = New-Object Drawing.Font "Segoe UI", $script:ui.Value, ([Drawing.FontStyle]::Bold), ([Drawing.GraphicsUnit]::Pixel)
+    $script:closeFont = New-Object Drawing.Font "Segoe UI", $script:ui.Close, ([Drawing.FontStyle]::Regular), ([Drawing.GraphicsUnit]::Pixel)
+}
+function Apply-BarLayout {
+    $screen = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+    $h = [int]$script:ui.Bar
+    $x = [int]$screen.X
+    $y = [int]$screen.Y
+    if ($script:collapsed) {
+        $script:form.Bounds = New-Object Drawing.Rectangle -ArgumentList $x, $y, ([int]$script:ui.Chip), $h
+    } else {
+        $script:form.Bounds = New-Object Drawing.Rectangle -ArgumentList $x, $y, ([int]$screen.Width), $h
         $script:slideY = 0
         $script:sliding = $false
         $script:slideHold = Get-Date
     }
     $script:form.Invalidate()
 }
-
+function Set-BarCollapsed([int]$mode) {
+    $script:collapsed = ($mode -eq 1)
+    Apply-BarLayout
+}
+function Set-BarLarge([int]$mode) {
+    $script:large = ($mode -eq 1)
+    Update-BarChrome
+    if ($script:cfg) {
+        $script:cfg | Add-Member -NotePropertyName large -NotePropertyValue ([bool]$script:large) -Force
+        Save-Config $script:cfg
+    }
+    Apply-BarLayout
+}
 function Draw-SideButtons($g, [single]$w, [single]$h) {
-    $mid = [int]($h / 2)
-    $g.DrawLine($script:linePen, ($w - 48), 10, ($w - 48), ($h - 10))
-    $g.DrawLine($script:linePen, ($w - 42), $mid, ($w - 8), $mid)
-    $g.DrawString("×", $script:closeFont, $script:closeBrush, ($w - 31), 10)
+    $band = [int]($h / 3)
+    $x0 = $w - $script:ui.Right
+    $g.DrawLine($script:linePen, $x0, 8, $x0, ($h - 8))
+    $g.DrawLine($script:linePen, ($x0 + 8), $band, ($w - 8), $band)
+    $g.DrawLine($script:linePen, ($x0 + 8), ($band * 2), ($w - 8), ($band * 2))
+    $g.DrawString("×", $script:closeFont, $script:closeBrush, ($w - 32), 6)
+    $sizeMark = "A+"
+    if ($script:large) { $sizeMark = "A" }
+    $g.DrawString($sizeMark, $script:closeFont, $script:closeBrush, ($w - 34), ($band + 4))
     $mark = "–"
     if ($script:collapsed) { $mark = "+" }
-    $g.DrawString($mark, $script:closeFont, $script:closeBrush, ($w - 30), ($mid + 8))
+    $g.DrawString($mark, $script:closeFont, $script:closeBrush, ($w - 30), (($band * 2) + 4))
 }
 
 $menu = New-Object Windows.Forms.ContextMenuStrip
@@ -687,13 +723,20 @@ $drag = $false
 $down = [Drawing.Point]::Empty
 $form.Add_MouseDown({
     if ($_.Button -ne "Left") { return }
-    $edge = $form.ClientSize.Width - 48
-    $mid = [int]($form.ClientSize.Height / 2)
+    $edge = $form.ClientSize.Width - [int]$script:ui.Right
     if ($_.X -ge $edge) {
-        if ($_.Y -lt $mid) { $form.Close(); return }
-        Set-BarCollapsed (-not $script:collapsed)
+        $band = [int]($_.Y * 3 / [Math]::Max(1, $form.ClientSize.Height))
+        if ($band -lt 0) { $band = 0 }
+        if ($band -gt 2) { $band = 2 }
+        if ($band -eq 0) { $form.Close(); return }
+        if ($band -eq 1) {
+            if ($script:large) { Set-BarLarge 0 } else { Set-BarLarge 1 }
+            return
+        }
+        if ($script:collapsed) { Set-BarCollapsed 0 } else { Set-BarCollapsed 1 }
         return
     }
+    if ($script:collapsed) { Set-BarCollapsed 0; return }
     $script:drag = $true
     $script:down = $_.Location
 })
@@ -716,13 +759,15 @@ $form.Add_Paint({
     $g.DrawLine($script:linePen, 0, 0, $w, 0)
     $g.DrawLine($script:linePen, 0, ($h - 1), $w, ($h - 1))
     if ($script:collapsed) {
-        if ($script:logo) { $g.DrawImage($script:logo, 14, 14, 44, 48) }
-        $g.DrawString("Житнево", $script:valueFont, $script:fgBrush, 68, 28)
+        $logo = [int]$script:ui.Logo
+        $ly = [int](($h - $logo) / 2)
+        if ($script:logo) { $g.DrawImage($script:logo, 14, $ly, $logo, $logo) }
+        $g.DrawString("Житнево", $script:valueFont, $script:fgBrush, ($logo + 24), [int](($h / 2) - 12))
         Draw-SideButtons $g $w $h
         return
     }
     $state = $g.Save()
-    $clipW = [int]$w - 46
+    $clipW = [int]$w - [int]$script:ui.Right
     $clipH = [int]$h
     $g.SetClip((New-Object Drawing.Rectangle -ArgumentList 0, 0, $clipW, $clipH))
     $shift = [single]$script:slideY
@@ -731,7 +776,9 @@ $form.Add_Paint({
     Draw-Row $g $shift $current
     Draw-Row $g ($shift - $h) $next
     $g.Restore($state)
-    if ($script:logo) { $g.DrawImage($script:logo, 14, 14, 44, 48) }
+    $logo = [int]$script:ui.Logo
+    $ly = [int](($h - $logo) / 2)
+    if ($script:logo) { $g.DrawImage($script:logo, 14, $ly, $logo, $logo) }
     Draw-SideButtons $g $w $h
 })
 
@@ -761,6 +808,8 @@ $slideTimer.Add_Tick({
     $script:form.Invalidate()
 })
 $slideTimer.Start()
+Update-BarChrome
+Apply-BarLayout
 $form.Add_Shown({ Update-Stats; Update-Partner })
 [void]$form.ShowDialog()
 $poll.Stop()
