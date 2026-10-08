@@ -76,7 +76,9 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.rtsp.RtspMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import java.time.Instant
 import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
 
 private val Ink = Color(ParkColors.INK)
@@ -105,7 +107,7 @@ fun ParkApp(vm: FeedViewModel = viewModel()) {
         val frame by vm.cameraBitmap.collectAsState()
         val camStatus by vm.camStatus.collectAsState()
         val sky by vm.sky.collectAsState()
-        val bplaDanger by vm.bplaDanger.collectAsState()
+        val bpla by vm.bpla.collectAsState()
         var open by remember { mutableStateOf(false) }
         var now by remember { mutableStateOf(ZonedDateTime.now(MOSCOW)) }
         LaunchedEffect(Unit) {
@@ -124,7 +126,7 @@ fun ParkApp(vm: FeedViewModel = viewModel()) {
                 partnerState = partnerState,
                 camStatus = camStatus,
                 sky = sky,
-                bplaDanger = bplaDanger,
+                bpla = bpla,
                 now = now,
                 onOpenSettings = { open = true },
             )
@@ -222,7 +224,7 @@ private fun Dashboard(
     partnerState: String,
     camStatus: String,
     sky: Sky,
-    bplaDanger: Boolean?,
+    bpla: AirUi,
     now: ZonedDateTime,
     onOpenSettings: () -> Unit,
 ) {
@@ -254,7 +256,6 @@ private fun Dashboard(
                     StatusLamp("Панель", parkState == "live")
                     StatusLamp("Дорнет", partnerState == "live")
                     StatusLamp("Камера", cameraOn)
-                    BplaStatus(bplaDanger)
                     if (demo) Text("образец", color = Muted, fontSize = 13.sp)
                 }
             }
@@ -284,6 +285,7 @@ private fun Dashboard(
         Band(R.drawable.logo_dornet, "Дорожная сеть", Modifier.padding(top = 10.dp).weight(1.35f)) {
             MetricGrid(partnerMetrics(partner), columns = 4, partner = true, Modifier.fillMaxSize())
         }
+        BplaBar(bpla)
     }
 }
 
@@ -363,28 +365,52 @@ private fun MetricCard(metric: Metric, partner: Boolean, modifier: Modifier) {
 }
 
 @Composable
-private fun BplaStatus(danger: Boolean?) {
-    val alert = danger == true
-    val color = when (danger) {
-        true -> Color(0xFFE24B4B)
-        false -> Color(0xFF3DDC6A)
-        null -> Muted
+private fun BplaBar(air: AirUi) {
+    val color = when {
+        !air.known -> Muted
+        air.danger -> Color(0xFFE24B4B)
+        else -> Color(0xFF3DDC6A)
     }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        FpvGlyph(color, Modifier.size(22.dp))
-        Spacer(Modifier.width(6.dp))
+    val shape = RoundedCornerShape(percent = 50)
+    val whenText = mentionClock(air.mentionedAt)
+    Row(
+        Modifier
+            .padding(top = 10.dp)
+            .fillMaxWidth()
+            .height(76.dp)
+            .clip(shape)
+            .border(2.dp, color, shape)
+            .background(color.copy(alpha = 0.14f))
+            .padding(horizontal = 28.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        FpvGlyph(color, Modifier.size(44.dp))
+        Spacer(Modifier.width(16.dp))
         Text(
-            when (danger) {
-                true -> "Опасность БПЛА"
-                false -> "Опасности нет"
-                null -> "…"
+            when {
+                !air.known -> "…"
+                air.danger -> "Опасность БПЛА"
+                else -> "Опасности нет"
             },
-            color = if (alert) Color(0xFFFFB4B4) else Muted,
-            fontSize = 14.sp,
-            fontWeight = if (alert) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (air.danger) Color(0xFFFFD0D0) else Fg,
+            fontSize = 30.sp,
+            fontWeight = FontWeight.SemiBold,
             maxLines = 1,
         )
+        if (whenText.isNotEmpty()) {
+            Spacer(Modifier.width(20.dp))
+            Text(whenText, color = Fg, fontSize = 26.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+        }
     }
+}
+
+private fun mentionClock(epoch: Long): String {
+    if (epoch <= 0) return ""
+    val moment = Instant.ofEpochSecond(epoch).atZone(MOSCOW)
+    val time = moment.format(DateTimeFormatter.ofPattern("HH:mm"))
+    val today = java.time.LocalDate.now(MOSCOW)
+    return if (moment.toLocalDate() == today) time else moment.format(DateTimeFormatter.ofPattern("dd.MM")) + " " + time
 }
 
 @Composable

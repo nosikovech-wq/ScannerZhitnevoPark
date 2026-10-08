@@ -14,6 +14,8 @@ import okhttp3.Request
 import org.json.JSONObject
 import kotlin.math.roundToInt
 
+data class AirUi(val known: Boolean = false, val danger: Boolean = false, val mentionedAt: Long = 0)
+
 class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val settings = MutableStateFlow(Prefs.load(app))
     val park = MutableStateFlow(demoPark())
@@ -23,8 +25,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val cameraBitmap = MutableStateFlow<Bitmap?>(null)
     val camStatus = MutableStateFlow("камера не задана")
     val sky = MutableStateFlow(Sky())
-    /** null — ещё нет ответа карты, true — Домодедово упомянуто за час. */
-    val bplaDanger = MutableStateFlow<Boolean?>(null)
+    val bpla = MutableStateFlow(AirUi())
     private val generation = MutableStateFlow(0)
 
     init {
@@ -174,7 +175,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                     if (!res.isSuccessful) error("карта ${res.code}")
                     res.body?.string().orEmpty()
                 }
-                bplaDanger.value = domodedovoWithinHour(JSONObject(body))
+                bpla.value = domodedovoAir(JSONObject(body))
             } catch (_: Exception) {
                 // оставляем последний известный статус
             }
@@ -182,8 +183,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun domodedovoWithinHour(root: JSONObject): Boolean {
+    private fun domodedovoAir(root: JSONObject): AirUi {
         val from = System.currentTimeMillis() / 1000 - 3600
+        var latest = 0L
         val cities = root.optJSONArray("cities")
         if (cities != null) {
             for (i in 0 until cities.length()) {
@@ -191,16 +193,20 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 val blob = city.optString("name") + " " + city.optString("key") + " " + city.optString("region")
                 if (!blob.contains("домодедово", ignoreCase = true)) continue
                 if (!blob.contains("москов", ignoreCase = true)) continue
-                if (epochSec(city.optLong("last_event_ts")) >= from) return true
+                val ts = epochSec(city.optLong("last_event_ts"))
+                if (ts > latest) latest = ts
             }
         }
-        val messages = root.optJSONArray("recent_messages") ?: return false
-        for (i in 0 until messages.length()) {
-            val msg = messages.optJSONObject(i) ?: continue
-            if (!msg.optString("text").contains("домодедово", ignoreCase = true)) continue
-            if (epochSec(msg.optLong("ts")) >= from) return true
+        val messages = root.optJSONArray("recent_messages")
+        if (messages != null) {
+            for (i in 0 until messages.length()) {
+                val msg = messages.optJSONObject(i) ?: continue
+                if (!msg.optString("text").contains("домодедово", ignoreCase = true)) continue
+                val ts = epochSec(msg.optLong("ts"))
+                if (ts > latest) latest = ts
+            }
         }
-        return false
+        return AirUi(known = true, danger = latest >= from && latest > 0, mentionedAt = latest)
     }
 
     private fun epochSec(ts: Long): Long {
