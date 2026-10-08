@@ -23,6 +23,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val cameraBitmap = MutableStateFlow<Bitmap?>(null)
     val camStatus = MutableStateFlow("камера не задана")
     val sky = MutableStateFlow(Sky())
+    /** null — ещё нет ответа карты, true — Домодедово упомянуто за час. */
+    val bplaDanger = MutableStateFlow<Boolean?>(null)
     private val generation = MutableStateFlow(0)
 
     init {
@@ -30,6 +32,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) { partnerLoop() }
         viewModelScope.launch(Dispatchers.IO) { cameraLoop() }
         viewModelScope.launch(Dispatchers.IO) { weatherLoop() }
+        viewModelScope.launch(Dispatchers.IO) { airLoop() }
     }
 
     fun save(next: AppSettings) {
@@ -155,6 +158,54 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             }
             delay(if (ok) 20 * 60_000L else 60_000L)
         }
+    }
+
+    private suspend fun airLoop() {
+        val url = "https://radar-map.ru/api/state"
+        while (true) {
+            try {
+                val body = Net.partner.newCall(
+                    Request.Builder()
+                        .url(url)
+                        .header("User-Agent", "ZhitnevoPark/1.0")
+                        .header("Accept", "application/json")
+                        .build(),
+                ).execute().use { res ->
+                    if (!res.isSuccessful) error("карта ${res.code}")
+                    res.body?.string().orEmpty()
+                }
+                bplaDanger.value = domodedovoWithinHour(JSONObject(body))
+            } catch (_: Exception) {
+                // оставляем последний известный статус
+            }
+            delay(60_000)
+        }
+    }
+
+    private fun domodedovoWithinHour(root: JSONObject): Boolean {
+        val from = System.currentTimeMillis() / 1000 - 3600
+        val cities = root.optJSONArray("cities")
+        if (cities != null) {
+            for (i in 0 until cities.length()) {
+                val city = cities.optJSONObject(i) ?: continue
+                val blob = city.optString("name") + " " + city.optString("key") + " " + city.optString("region")
+                if (!blob.contains("домодедово", ignoreCase = true)) continue
+                if (!blob.contains("москов", ignoreCase = true)) continue
+                if (epochSec(city.optLong("last_event_ts")) >= from) return true
+            }
+        }
+        val messages = root.optJSONArray("recent_messages") ?: return false
+        for (i in 0 until messages.length()) {
+            val msg = messages.optJSONObject(i) ?: continue
+            if (!msg.optString("text").contains("домодедово", ignoreCase = true)) continue
+            if (epochSec(msg.optLong("ts")) >= from) return true
+        }
+        return false
+    }
+
+    private fun epochSec(ts: Long): Long {
+        if (ts <= 0) return 0
+        return if (ts > 10_000_000_000L) ts / 1000 else ts
     }
 
     private fun symbolToCode(symbol: String): Int = when (symbol.substringBefore("_")) {

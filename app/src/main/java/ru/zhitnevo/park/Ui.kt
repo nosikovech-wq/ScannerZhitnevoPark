@@ -105,6 +105,7 @@ fun ParkApp(vm: FeedViewModel = viewModel()) {
         val frame by vm.cameraBitmap.collectAsState()
         val camStatus by vm.camStatus.collectAsState()
         val sky by vm.sky.collectAsState()
+        val bplaDanger by vm.bplaDanger.collectAsState()
         var open by remember { mutableStateOf(false) }
         var now by remember { mutableStateOf(ZonedDateTime.now(MOSCOW)) }
         LaunchedEffect(Unit) {
@@ -123,6 +124,7 @@ fun ParkApp(vm: FeedViewModel = viewModel()) {
                 partnerState = partnerState,
                 camStatus = camStatus,
                 sky = sky,
+                bplaDanger = bplaDanger,
                 now = now,
                 onOpenSettings = { open = true },
             )
@@ -220,6 +222,7 @@ private fun Dashboard(
     partnerState: String,
     camStatus: String,
     sky: Sky,
+    bplaDanger: Boolean?,
     now: ZonedDateTime,
     onOpenSettings: () -> Unit,
 ) {
@@ -251,6 +254,7 @@ private fun Dashboard(
                     StatusLamp("Панель", parkState == "live")
                     StatusLamp("Дорнет", partnerState == "live")
                     StatusLamp("Камера", cameraOn)
+                    BplaStatus(bplaDanger)
                     if (demo) Text("образец", color = Muted, fontSize = 13.sp)
                 }
             }
@@ -356,6 +360,60 @@ private fun MetricCard(metric: Metric, partner: Boolean, modifier: Modifier) {
             }
         }
     }
+}
+
+@Composable
+private fun BplaStatus(danger: Boolean?) {
+    val alert = danger == true
+    val color = when (danger) {
+        true -> Color(0xFFE24B4B)
+        false -> Color(0xFF3DDC6A)
+        null -> Muted
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        FpvGlyph(color, Modifier.size(22.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(
+            when (danger) {
+                true -> "Опасность БПЛА"
+                false -> "Опасности нет"
+                null -> "…"
+            },
+            color = if (alert) Color(0xFFFFB4B4) else Muted,
+            fontSize = 14.sp,
+            fontWeight = if (alert) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun FpvGlyph(color: Color, modifier: Modifier) {
+    val hover = rememberInfiniteTransition(label = "fpv")
+    val bob by hover.animateFloat(
+        initialValue = -1.5f,
+        targetValue = 1.5f,
+        animationSpec = infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "bob",
+    )
+    Canvas(modifier) {
+        val c = Offset(size.width / 2f, size.height / 2f + bob)
+        val arm = size.minDimension * 0.30f
+        drawLine(color, Offset(c.x - arm, c.y - arm * 0.72f), Offset(c.x + arm, c.y + arm * 0.72f), strokeWidth = 2.4f)
+        drawLine(color, Offset(c.x - arm, c.y + arm * 0.72f), Offset(c.x + arm, c.y - arm * 0.72f), strokeWidth = 2.4f)
+        val hubs = listOf(
+            Offset(c.x - arm, c.y - arm * 0.72f),
+            Offset(c.x + arm, c.y - arm * 0.72f),
+            Offset(c.x - arm, c.y + arm * 0.72f),
+            Offset(c.x + arm, c.y + arm * 0.72f),
+        )
+        hubs.forEach { drawCircle(color.copy(alpha = 0.35f), radius = size.minDimension * 0.13f, center = it) }
+        drawRoundRectLike(color, c, size.minDimension * 0.16f)
+    }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRoundRectLike(color: Color, c: Offset, r: Float) {
+    drawCircle(color, radius = r, center = c)
 }
 
 @Composable
