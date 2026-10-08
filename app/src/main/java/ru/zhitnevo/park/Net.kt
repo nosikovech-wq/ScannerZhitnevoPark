@@ -225,6 +225,7 @@ object Feeds {
                 monthNumber = month,
                 date = body.optString("date"),
                 last = firstTime(body),
+                plate = firstPlate(body),
                 dayMoney = moneyOrNull(body, "dayMoney"),
                 monthMoney = moneyOrNull(body, "monthMoney"),
             )
@@ -271,8 +272,11 @@ object Feeds {
         val count = num(reviews, "count")
         val latest = partnerGet("/api/supplier/review/list?limit=1&start=${(count - 1).coerceAtLeast(0)}", token)
         var reviewDate = "нет"
-        val created = itemsOf(latest).firstOrNull()?.optString("date_created").orEmpty()
+        var reviewStars = 0
+        val latestItem = itemsOf(latest).firstOrNull()
+        val created = latestItem?.optString("date_created").orEmpty()
         if (created.length >= 10) reviewDate = created.substring(0, 10).replace('-', '.')
+        reviewStars = reviewStarsOf(latestItem)
         return PartnerRaw(
             ok = true,
             dayCount = num(dayPark, "total"),
@@ -283,6 +287,7 @@ object Feeds {
             laundryDay = daySvc.second,
             laundryMonth = monthSvc.second,
             reviewDate = reviewDate,
+            reviewStars = reviewStars,
         )
     }
 
@@ -373,14 +378,46 @@ object Feeds {
         }
     }
 
-    private fun firstTime(stats: JSONObject): String {
-        if (!stats.has("plates") || stats.isNull("plates")) return "нет"
-        val item = when (val plates = stats.get("plates")) {
+    private fun firstPlate(stats: JSONObject): String {
+        val item = firstPlateItem(stats) ?: return ""
+        for (key in listOf("tractor", "number", "plate", "gosNumber")) {
+            val value = item.optString(key).trim()
+            if (value.isNotEmpty() && value != "null") return value
+        }
+        return ""
+    }
+
+    private fun firstPlateItem(stats: JSONObject): JSONObject? {
+        if (!stats.has("plates") || stats.isNull("plates")) return null
+        return when (val plates = stats.get("plates")) {
             is JSONArray -> if (plates.length() == 0) null else plates.optJSONObject(0)
             is JSONObject -> plates
             else -> null
-        } ?: return "нет"
+        }
+    }
+
+    private fun firstTime(stats: JSONObject): String {
+        val item = firstPlateItem(stats) ?: return "нет"
         return item.optString("time").trim().ifEmpty { "нет" }
+    }
+
+    private fun reviewStarsOf(item: JSONObject?): Int {
+        if (item == null) return 0
+        for (key in listOf("rating", "stars", "star", "rate", "mark", "score", "grade", "ball")) {
+            if (!item.has(key) || item.isNull(key)) continue
+            val raw = when (val value = item.get(key)) {
+                is Number -> value.toDouble()
+                is String -> value.trim().toDoubleOrNull()
+                else -> null
+            } ?: continue
+            val stars = when {
+                raw in 0.0..5.0 -> raw
+                raw in 5.0..10.0 -> raw / 2.0
+                else -> continue
+            }
+            return kotlin.math.round(stars).toInt().coerceIn(0, 5)
+        }
+        return 0
     }
 
     private fun itemsOf(json: JSONObject?): List<JSONObject> {

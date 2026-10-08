@@ -36,6 +36,7 @@ data class ParkRaw(
     val monthNumber: Int = 1,
     val date: String = "",
     val last: String = "нет",
+    val plate: String = "",
     val dayMoney: Int? = null,
     val monthMoney: Int? = null,
 )
@@ -51,6 +52,7 @@ data class PartnerRaw(
     val laundryDay: Int = 0,
     val laundryMonth: Int = 0,
     val reviewDate: String = "нет",
+    val reviewStars: Int = 0,
 )
 
 data class ParkUi(
@@ -64,6 +66,7 @@ data class ParkUi(
     val monthMoney: String,
     val avg: String,
     val last: String,
+    val plate: String = "",
 )
 
 data class PartnerUi(
@@ -81,9 +84,18 @@ data class PartnerUi(
     val laundryMoney: String,
     val totalDay: String,
     val totalMonth: String,
+    val reviewStars: Int = 0,
 )
 
-data class Metric(val label: String, val value: String, val detail: String? = null)
+data class Metric(
+    val label: String,
+    val value: String,
+    val detail: String? = null,
+    val money: Boolean = true,
+    val stars: Int = -1,
+)
+
+data class Sky(val temp: String = "—", val code: Int = -1, val label: String = "")
 
 object ParkColors {
     const val INK = 0xFF0B0C0EL
@@ -158,6 +170,7 @@ fun demoPark(): ParkUi {
         monthMoney = money(86_800),
         avg = formatAverage(monthCount, day),
         last = "17:42",
+        plate = "А123ВС77",
     )
 }
 
@@ -184,6 +197,7 @@ fun demoPartner(): PartnerUi {
         shower = "$showerDay · $showerMonth",
         laundry = "$laundryDay · $laundryMonth",
         reviewDate = "2026.10.07",
+        reviewStars = 4,
         parkDayMoney = money(parkDayMoney),
         parkMonthMoney = money(parkMonthMoney),
         showerMoney = moneyPair(showerDayMoney, showerMonthMoney),
@@ -211,6 +225,7 @@ fun parkFrom(raw: ParkRaw?): ParkUi {
         monthMoney = raw.monthMoney?.let { money(it) } ?: "—",
         avg = formatAverage(raw.month, dayNum),
         last = raw.last.ifBlank { "нет" },
+        plate = raw.plate,
     )
 }
 
@@ -232,6 +247,7 @@ fun partnerFrom(raw: PartnerRaw?): PartnerUi {
         shower = "${raw.showerDay} · ${raw.showerMonth}",
         laundry = "${raw.laundryDay} · ${raw.laundryMonth}",
         reviewDate = raw.reviewDate,
+        reviewStars = raw.reviewStars.coerceIn(0, 5),
         parkDayMoney = money(parkDayMoney),
         parkMonthMoney = money(parkMonthMoney),
         showerMoney = moneyPair(showerDayMoney, showerMonthMoney),
@@ -245,7 +261,7 @@ fun parkMetrics(park: ParkUi) = listOf(
     Metric(if (park.offline) "Сегодня, нет связи" else "Сегодня", park.day, park.dayMoney),
     Metric(park.monthLabel, park.monthCount, park.monthMoney),
     Metric("Среднее за день", park.avg),
-    Metric("Последняя машина", park.last),
+    Metric("Последняя машина", park.last, park.plate.ifBlank { null }, money = false),
 )
 
 fun partnerMetrics(partner: PartnerUi) = listOf(
@@ -254,7 +270,7 @@ fun partnerMetrics(partner: PartnerUi) = listOf(
     Metric("Среднее за день", partner.avg),
     Metric("Душ, сегодня/мес.", partner.shower, partner.showerMoney),
     Metric("Прачечная, сегодня/мес.", partner.laundry, partner.laundryMoney),
-    Metric("Последний отзыв", partner.reviewDate),
+    Metric("Последний отзыв", partner.reviewDate, stars = partner.reviewStars),
     Metric("Всего за день", partner.totalDay),
     Metric("Всего за месяц", partner.totalMonth),
 )

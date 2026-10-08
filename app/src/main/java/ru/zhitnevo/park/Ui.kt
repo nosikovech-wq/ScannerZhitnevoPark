@@ -2,6 +2,13 @@ package ru.zhitnevo.park
 
 import android.view.ViewGroup
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -44,8 +52,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -94,6 +104,7 @@ fun ParkApp(vm: FeedViewModel = viewModel()) {
         val partnerState by vm.partnerState.collectAsState()
         val frame by vm.cameraBitmap.collectAsState()
         val camStatus by vm.camStatus.collectAsState()
+        val sky by vm.sky.collectAsState()
         var open by remember { mutableStateOf(false) }
         var now by remember { mutableStateOf(ZonedDateTime.now(MOSCOW)) }
         LaunchedEffect(Unit) {
@@ -111,6 +122,7 @@ fun ParkApp(vm: FeedViewModel = viewModel()) {
                 parkState = parkState,
                 partnerState = partnerState,
                 camStatus = camStatus,
+                sky = sky,
                 now = now,
                 onOpenSettings = { open = true },
             )
@@ -208,6 +220,7 @@ private fun Dashboard(
     parkState: String,
     partnerState: String,
     camStatus: String,
+    sky: Sky,
     now: ZonedDateTime,
     onOpenSettings: () -> Unit,
 ) {
@@ -217,32 +230,33 @@ private fun Dashboard(
         runCatching { focus.requestFocus() }
     }
     val demo = parkState == "demo" || partnerState == "demo"
+    val cameraOn = camStatus == "камера снимок" || camStatus == "камера поток"
     Column(Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Image(
                 painter = painterResource(R.drawable.logo_zhitnevo),
-                contentDescription = "Житнево Парк",
+                contentDescription = "Мониторинг Житнево Парк",
                 modifier = Modifier.size(58.dp),
             )
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text("Житнево Парк", color = Fg, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
                 Text(
-                    buildString {
-                        append("Панель ")
-                        append(statusWord(parkState, park.ready))
-                        append("   /   Сеть ")
-                        append(statusWord(partnerState, partner.ready))
-                        if (demo) append("   ·   образец цифр")
-                        append("   ·   ")
-                        append(camStatus)
-                    },
-                    color = Muted,
-                    fontSize = 14.sp,
+                    "Мониторинг Житнево Парк",
+                    color = Fg,
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    StatusLamp("Панель", parkState == "live")
+                    StatusLamp("Дорнет", partnerState == "live")
+                    StatusLamp("Камера", cameraOn)
+                    if (demo) Text("образец", color = Muted, fontSize = 13.sp)
+                }
             }
+            WeatherBadge(sky)
+            Spacer(Modifier.width(18.dp))
             Column(horizontalAlignment = Alignment.End) {
                 Text(clock.first, color = Fg, fontSize = 36.sp, fontWeight = FontWeight.SemiBold)
                 Text(clock.second, color = Muted, fontSize = 14.sp)
@@ -273,11 +287,12 @@ private fun Dashboard(
 @Composable
 private fun Band(logo: Int, caption: String, modifier: Modifier, content: @Composable () -> Unit) {
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(92.dp)) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(84.dp)) {
             Image(
                 painter = painterResource(logo),
                 contentDescription = caption,
-                modifier = Modifier.size(72.dp),
+                modifier = Modifier.size(64.dp),
+                contentScale = ContentScale.Fit,
             )
         }
         Spacer(Modifier.width(12.dp))
@@ -322,22 +337,132 @@ private fun MetricCard(metric: Metric, partner: Boolean, modifier: Modifier) {
         if (!metric.detail.isNullOrBlank()) {
             Text(
                 metric.detail,
-                color = Money,
-                fontSize = 16.sp,
+                color = if (metric.money) Money else Fg,
+                fontSize = if (metric.money) 16.sp else 18.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 2.dp),
             )
         }
+        if (metric.stars >= 0) {
+            Row(Modifier.padding(top = 2.dp)) {
+                repeat(5) { index ->
+                    Text(
+                        if (index < metric.stars) "★" else "☆",
+                        color = if (index < metric.stars) Color(0xFFFFC857) else Color.White.copy(alpha = 0.28f),
+                        fontSize = 18.sp,
+                    )
+                }
+            }
+        }
     }
 }
 
-private fun statusWord(state: String, ready: Boolean): String = when {
-    state == "demo" -> "демо"
-    state == "loading" -> "связь…"
-    state == "error" || !ready -> "нет связи"
-    else -> "на связи"
+@Composable
+private fun StatusLamp(label: String, on: Boolean) {
+    val pulse = rememberInfiniteTransition(label = label)
+    val glow by pulse.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1100, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "glow",
+    )
+    val color = if (on) Color(0xFF3DDC6A) else Color(0xFFE24B4B)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(18.dp)) {
+            Box(
+                Modifier
+                    .size(if (on) (14 * glow).dp else 12.dp)
+                    .clip(CircleShape)
+                    .background(color.copy(alpha = if (on) 0.35f else 0.2f)),
+            )
+            Box(
+                Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(color),
+            )
+        }
+        Text(label, color = Muted, fontSize = 14.sp)
+    }
+}
+
+@Composable
+private fun WeatherBadge(sky: Sky) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        WeatherGlyph(sky.code, Modifier.size(54.dp))
+        Column {
+            Text(sky.temp, color = Fg, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+            Text(sky.label.ifBlank { "Житнево" }, color = Muted, fontSize = 13.sp, maxLines = 1)
+            Text("Житнево", color = Muted, fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
+private fun WeatherGlyph(code: Int, modifier: Modifier) {
+    val motion = rememberInfiniteTransition(label = "sky")
+    val t by motion.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(2800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "t",
+    )
+    val spin by motion.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(14000)),
+        label = "spin",
+    )
+    Canvas(modifier) {
+        val c = Offset(size.width / 2f, size.height / 2f)
+        val sun = Color(0xFFFFC857)
+        val cloud = Color(0xFFE7EEF6)
+        val rain = Color(0xFF7EBAE0)
+        val kind = when (code) {
+            0, 1 -> "sun"
+            2 -> "part"
+            71, 73, 75, 77, 85, 86 -> "snow"
+            51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82 -> "rain"
+            95, 96, 99 -> "storm"
+            else -> "cloud"
+        }
+        if (kind == "sun" || kind == "part") {
+            rotate(spin, c) {
+                repeat(8) { i ->
+                    rotate(i * 45f, c) {
+                        drawLine(sun, Offset(c.x, 4f), Offset(c.x, 14f), strokeWidth = 3f)
+                    }
+                }
+            }
+            drawCircle(sun, radius = size.minDimension * 0.22f, center = c)
+        }
+        if (kind != "sun") {
+            val drift = (t - 0.5f) * 8f
+            val base = c.copy(x = c.x + drift, y = c.y + 2f)
+            drawCircle(cloud, radius = size.minDimension * 0.16f, center = base.copy(x = base.x - 10f, y = base.y + 4f))
+            drawCircle(cloud, radius = size.minDimension * 0.22f, center = base)
+            drawCircle(cloud, radius = size.minDimension * 0.14f, center = base.copy(x = base.x + 12f, y = base.y + 4f))
+        }
+        if (kind == "rain" || kind == "storm") {
+            repeat(3) { i ->
+                val drop = (t + i * 0.28f) % 1f
+                drawLine(
+                    if (kind == "storm") Color(0xFFFFE08A) else rain,
+                    Offset(c.x - 12f + i * 12f, c.y + 10f + drop * 14f),
+                    Offset(c.x - 16f + i * 12f, c.y + 22f + drop * 14f),
+                    strokeWidth = 2.5f,
+                )
+            }
+        }
+        if (kind == "snow") {
+            repeat(4) { i ->
+                val fall = (t + i * 0.22f) % 1f
+                drawCircle(Color.White, radius = 2.2f, center = Offset(c.x - 14f + i * 10f, c.y + 8f + fall * 18f))
+            }
+        }
+    }
 }
 
 @Composable
@@ -365,13 +490,7 @@ private fun SettingsScreen(initial: AppSettings, onClose: () -> Unit, onSave: (A
             .verticalScroll(rememberScrollState())
             .padding(28.dp),
     ) {
-        Text("Вход и камера", color = Fg, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
-        Text(
-            "Панель Житнево и Дорожная сеть — те же цифры, что у бегущей строки. Камера Hikvision в локальной сети телевизора: снимок ISAPI или поток RTSP. Пароли остаются только на этом устройстве.",
-            color = Muted,
-            fontSize = 15.sp,
-            modifier = Modifier.padding(top = 6.dp, bottom = 16.dp),
-        )
+        Text("Настройки", color = Fg, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Панель", color = Fg, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
@@ -396,15 +515,6 @@ private fun SettingsScreen(initial: AppSettings, onClose: () -> Unit, onSave: (A
                 Toggle("HTTPS (обычно порт 443)", hikHttps) { hikHttps = it }
                 Toggle("Живой поток RTSP вместо снимка", hikLive) { hikLive = it }
                 Toggle("Субпоток (канал x02, обычно H.264)", hikSub) { hikSub = it }
-                Text(
-                    if (hikLive) {
-                        "Поток: rtsp://адрес:554/Streaming/Channels/102 по TCP. Основной поток Hikvision часто H.265 — плеер телевизора его не откроет, оставьте субпоток."
-                    } else {
-                        "Снимок ISAPI /ISAPI/Streaming/channels/102/picture, вход Digest, обновление каждые 4 секунды. Телевизор и камера должны быть в одной сети."
-                    },
-                    color = Muted,
-                    fontSize = 13.sp,
-                )
                 Text("Затемнение  ${kotlin.math.round(dim * 100).toInt()}%", color = Muted, fontSize = 14.sp)
                 Slider(
                     value = dim,

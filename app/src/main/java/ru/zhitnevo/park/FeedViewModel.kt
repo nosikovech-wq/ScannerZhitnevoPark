@@ -10,6 +10,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.Request
+import org.json.JSONObject
+import kotlin.math.roundToInt
 
 class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val settings = MutableStateFlow(Prefs.load(app))
@@ -19,12 +22,14 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val partnerState = MutableStateFlow("demo")
     val cameraBitmap = MutableStateFlow<Bitmap?>(null)
     val camStatus = MutableStateFlow("камера не задана")
+    val sky = MutableStateFlow(Sky())
     private val generation = MutableStateFlow(0)
 
     init {
         viewModelScope.launch(Dispatchers.IO) { parkLoop() }
         viewModelScope.launch(Dispatchers.IO) { partnerLoop() }
         viewModelScope.launch(Dispatchers.IO) { cameraLoop() }
+        viewModelScope.launch(Dispatchers.IO) { weatherLoop() }
     }
 
     fun save(next: AppSettings) {
@@ -110,6 +115,41 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             }
             delay(4000)
         }
+    }
+
+    private suspend fun weatherLoop() {
+        val url = "https://api.open-meteo.com/v1/forecast?latitude=55.34233&longitude=37.91464" +
+            "&current=temperature_2m,weather_code&timezone=Europe%2FMoscow"
+        while (true) {
+            try {
+                val body = Net.partner.newCall(Request.Builder().url(url).build()).execute().use { res ->
+                    res.body?.string().orEmpty()
+                }
+                val current = JSONObject(body).getJSONObject("current")
+                val code = current.getInt("weather_code")
+                val temp = current.getDouble("temperature_2m").roundToInt()
+                sky.value = Sky(
+                    temp = "${if (temp > 0) "+" else ""}$temp°",
+                    code = code,
+                    label = weatherLabel(code),
+                )
+            } catch (_: Exception) {
+                if (sky.value.code < 0) sky.value = Sky(label = "нет данных")
+            }
+            delay(15 * 60_000)
+        }
+    }
+
+    private fun weatherLabel(code: Int) = when (code) {
+        0 -> "ясно"
+        1, 2 -> "мало облаков"
+        3 -> "облачно"
+        45, 48 -> "туман"
+        51, 53, 55, 56, 57 -> "морось"
+        61, 63, 65, 66, 67, 80, 81, 82 -> "дождь"
+        71, 73, 75, 77, 85, 86 -> "снег"
+        95, 96, 99 -> "гроза"
+        else -> "Житнево"
     }
 
     private suspend fun waitUntil(ms: Long, stamp: Int) {
