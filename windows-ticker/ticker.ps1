@@ -679,8 +679,8 @@ $script:collapsed = $false
 
 function Update-BarChrome {
     if ($script:large) {
-        $logo = 60
-        $script:ui = [pscustomobject]@{ Bar = 108; CardH = 90; CardTop = 9; Label = 16; Value = 22; Close = 16; Logo = $logo; Left = 88; Mid = (24 + $logo); Right = 76; Gap = 8; Chip = 280 }
+        $logo = 68
+        $script:ui = [pscustomobject]@{ Bar = 122; CardH = 104; CardTop = 9; Label = 18; Value = 24; Close = 16; Logo = $logo; Left = 96; Mid = (24 + $logo); Right = 76; Gap = 8; Chip = 300 }
     } else {
         $logo = 44
         $script:ui = [pscustomobject]@{ Bar = 78; CardH = 62; CardTop = 8; Label = 13; Value = 16; Close = 15; Logo = $logo; Left = 70; Mid = (24 + $logo); Right = 64; Gap = 8; Chip = 200 }
