@@ -29,6 +29,10 @@ $script:pieces = @()
 $script:strip = $null
 $script:stripWidth = 1
 $script:logo = $null
+$script:partner = $null
+$script:partnerToken = ""
+$script:partnerAt = [datetime]::MinValue
+$script:partnerLogo = $null
 $script:clock = [Diagnostics.Stopwatch]::StartNew()
 $script:lastTick = 0
 
@@ -149,6 +153,152 @@ function Noun([int]$n, [string]$one, [string]$few, [string]$many) {
 function Money([int]$n) {
     return ("{0:N0}" -f $n) + " ₽"
 }
+function Invoke-Partner([string]$method, [string]$url, $bodyObj, [string]$bearer) {
+    $req = [System.Net.HttpWebRequest]::Create($url)
+    $req.Method = $method
+    $req.Timeout = 20000
+    $req.Accept = "application/json"
+    if ($bearer) { $req.Headers["Authorization"] = "Bearer $bearer" }
+    if ($null -ne $bodyObj) {
+        $bytes = [Text.Encoding]::UTF8.GetBytes(($bodyObj | ConvertTo-Json -Compress))
+        $req.ContentType = "application/json; charset=utf-8"
+        $req.ContentLength = $bytes.Length
+        $stream = $req.GetRequestStream()
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Close()
+    }
+    try {
+        $res = $req.GetResponse()
+        $reader = New-Object IO.StreamReader($res.GetResponseStream(), [Text.Encoding]::UTF8)
+        $text = $reader.ReadToEnd()
+        $reader.Close()
+        $res.Close()
+        if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+        return $text | ConvertFrom-Json
+    } catch [System.Net.WebException] {
+        $code = 0
+        $msg = $_.Exception.Message
+        $errRes = $_.Exception.Response
+        if ($errRes) {
+            $code = [int]$errRes.StatusCode
+            try {
+                $reader = New-Object IO.StreamReader($errRes.GetResponseStream(), [Text.Encoding]::UTF8)
+                $errText = $reader.ReadToEnd()
+                $reader.Close()
+                $parsed = $errText | ConvertFrom-Json
+                if ($parsed.error) { $msg = [string]$parsed.error }
+            } catch {}
+        }
+        throw "$code $msg"
+    }
+}
+
+function Update-Partner {
+    if (-not $script:cfg.partnerUser -or -not $script:cfg.partnerSecret) {
+        $script:partner = [pscustomobject]@{ Ready = $false; Status = "Нет входа Дорожной сети" }
+        return
+    }
+    if ($script:partner -and $script:partner.Ready -and ((Get-Date) - $script:partnerAt).TotalSeconds -lt 150) { return }
+    try {
+        $pass = Unprotect-Text $script:cfg.partnerSecret
+        if (-not $script:partnerToken) {
+            $login = Invoke-Partner "POST" "https://back.dornet.ru/api/account/auth" @{ login = [string]$script:cfg.partnerUser; password = $pass } ""
+            $script:partnerToken = [string]$login.token
+        }
+        $tz = [TimeZoneInfo]::FindSystemTimeZoneById("Russian Standard Time")
+        $now = [TimeZoneInfo]::ConvertTime([DateTime]::UtcNow, $tz)
+        $today = $now.ToString("yyyy-MM-dd")
+        $tomorrow = $now.AddDays(1).ToString("yyyy-MM-dd")
+        $monthStart = (Get-Date -Year $now.Year -Month $now.Month -Day 1).ToString("yyyy-MM-dd")
+        $nextMonth = (Get-Date -Year $now.Year -Month $now.Month -Day 1).AddMonths(1).ToString("yyyy-MM-dd")
+        $dayOrders = $null
+        $monthOrders = $null
+        $reviews = $null
+        $features = $null
+        try {
+            $dayOrders = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/order/list?limit=1&start=0&dateFrom=$today&dateTo=$tomorrow" $null $script:partnerToken
+            $monthOrders = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/order/list?limit=1&start=0&dateFrom=$monthStart&dateTo=$nextMonth" $null $script:partnerToken
+            $reviews = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/review/count" $null $script:partnerToken
+            $features = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/feature/list" $null $script:partnerToken
+        } catch {
+            if ($_.Exception.Message -match "^401") {
+                $script:partnerToken = ""
+                $login = Invoke-Partner "POST" "https://back.dornet.ru/api/account/auth" @{ login = [string]$script:cfg.partnerUser; password = $pass } ""
+                $script:partnerToken = [string]$login.token
+                $dayOrders = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/order/list?limit=1&start=0&dateFrom=$today&dateTo=$tomorrow" $null $script:partnerToken
+                $monthOrders = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/order/list?limit=1&start=0&dateFrom=$monthStart&dateTo=$nextMonth" $null $script:partnerToken
+                $reviews = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/review/count" $null $script:partnerToken
+                $features = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/feature/list" $null $script:partnerToken
+            } else { throw }
+        }
+        $point = $null
+        if ($features -is [System.Array]) {
+            if ($features.Length -gt 0) { $point = $features[0] }
+        } elseif ($features.features) {
+            $point = $features
+        }
+        $shower = $false
+        $laundry = $false
+        if ($point -and $point.features) {
+            $shower = [int]$point.features.shower -eq 1
+            $laundry = [int]$point.features.laundry -eq 1
+        }
+        $services = "нет"
+        if ($shower -and $laundry) { $services = "душ и прачечная" }
+        elseif ($shower) { $services = "только душ" }
+        elseif ($laundry) { $services = "только прачечная" }
+        $mark = [math]::Round([double]$reviews.average, 2).ToString("0.00")
+        $dayCount = [int]$dayOrders.total
+        $monthCount = [int]$monthOrders.total
+        $script:partner = [pscustomobject]@{
+            Ready = $true
+            Today = ("{0} {1}" -f $dayCount, (Noun $dayCount "машина" "машины" "машин"))
+            Month = ("{0} {1}" -f $monthCount, (Noun $monthCount "машина" "машины" "машин"))
+            Reviews = ("{0} · {1}" -f $mark, [int]$reviews.count)
+            Services = $services
+            Status = ""
+        }
+        $script:partnerAt = Get-Date
+    } catch {
+        $script:partner = [pscustomobject]@{ Ready = $false; Status = "Дорожная сеть недоступна" }
+    } finally {
+        if ($script:form) { $script:form.Invalidate() }
+    }
+}
+
+function Ensure-PartnerLogo {
+    $path = Join-Path $AppDir "dornet.png"
+    if (-not (Test-Path $path)) {
+        $req = [System.Net.HttpWebRequest]::Create("https://front.dornet.ru/favicon/android-icon-192x192.png")
+        $req.Timeout = 15000
+        $res = $req.GetResponse()
+        $input = $res.GetResponseStream()
+        $output = [IO.File]::Create($path)
+        $input.CopyTo($output)
+        $output.Close(); $input.Close(); $res.Close()
+    }
+    return [Drawing.Image]::FromFile($path)
+}
+
+function Import-PartnerSeed {
+    $seedPath = Join-Path $PSScriptRoot "partner.local.json"
+    if (-not (Test-Path $seedPath) -or -not $script:cfg) { return }
+    $seed = Get-Content $seedPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    if (-not $seed.username -or -not $seed.password) { return }
+    $script:cfg = [pscustomobject]@{
+        server = [string]$script:cfg.server
+        username = [string]$script:cfg.username
+        secret = [string]$script:cfg.secret
+        token = [string]$script:cfg.token
+        role = [string]$script:cfg.role
+        autostart = [bool]$script:cfg.autostart
+        partnerUser = [string]$seed.username
+        partnerSecret = (Protect-Text ([string]$seed.password))
+    }
+    Save-Config $script:cfg
+    Remove-Item $seedPath -Force
+}
+
 function Build-View {
     $months = @("Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь")
     if (-not $script:stats) {
@@ -172,7 +322,8 @@ function Build-View {
     }
 }
 
-function Draw-Card($g, [int]$x, [int]$y, [int]$w, [int]$h, [string]$label, [string]$value, $valueBrush) {
+function Draw-Card($g, [int]$x, [int]$y, [int]$w, [int]$h, [string]$label, [string]$value, $valueBrush, $pen) {
+    if (-not $pen) { $pen = $script:cardPen }
     $path = New-Object Drawing.Drawing2D.GraphicsPath
     $d = 16
     $path.AddArc($x, $y, $d, $d, 180, 90)
@@ -181,7 +332,7 @@ function Draw-Card($g, [int]$x, [int]$y, [int]$w, [int]$h, [string]$label, [stri
     $path.AddArc($x, ($y + $h - $d), $d, $d, 90, 90)
     $path.CloseFigure()
     $g.FillPath($script:cardFill, $path)
-    $g.DrawPath($script:cardPen, $path)
+    $g.DrawPath($pen, $path)
     $path.Dispose()
     $g.DrawString($label, $script:labelFont, $script:mutedBrush, ($x + 14), ($y + 8))
     $g.DrawString($value, $script:valueFont, $valueBrush, ($x + 14), ($y + 28))
@@ -212,7 +363,7 @@ function Show-Setup {
     $form.FormBorderStyle = "FixedDialog"
     $form.MaximizeBox = $false
     $form.MinimizeBox = $false
-    $form.ClientSize = New-Object Drawing.Size 420, 280
+    $form.ClientSize = New-Object Drawing.Size 420, 390
     $form.BackColor = [Drawing.Color]::FromArgb(20, 22, 26)
     $form.ForeColor = [Drawing.Color]::FromArgb(241, 242, 244)
     $form.Font = New-Object Drawing.Font "Segoe UI", 10
@@ -243,16 +394,20 @@ function Show-Setup {
     $user = Add-Box $(if ($existing.username) { $existing.username } else { "" }) 96 $false
     Add-Label "Пароль" 132
     $pass = Add-Box "" 154 $true
+    Add-Label "Дорожная сеть, логин" 196
+    $partnerUser = Add-Box $(if ($existing.partnerUser) { $existing.partnerUser } else { "" }) 218 $false
+    Add-Label "Дорожная сеть, пароль" 254
+    $partnerPass = Add-Box "" 276 $true
     $auto = New-Object Windows.Forms.CheckBox
     $auto.Text = "Запускать вместе с Windows"
     $auto.AutoSize = $true
-    $auto.Location = New-Object Drawing.Point 24, 196
+    $auto.Location = New-Object Drawing.Point 24, 314
     $auto.ForeColor = [Drawing.Color]::FromArgb(241, 242, 244)
     $auto.Checked = [bool]$existing.autostart
     $form.Controls.Add($auto)
     $ok = New-Object Windows.Forms.Button
     $ok.Text = "Сохранить"
-    $ok.Location = New-Object Drawing.Point 24, 230
+    $ok.Location = New-Object Drawing.Point 24, 344
     $ok.Size = New-Object Drawing.Size 160, 34
     $ok.FlatStyle = "Flat"
     $ok.BackColor = [Drawing.Color]::FromArgb(232, 234, 238)
@@ -264,6 +419,11 @@ function Show-Setup {
             [Windows.Forms.MessageBox]::Show("Нужны логин и пароль панели.", "Житнево Парк")
             return
         }
+        $keptPartner = ""
+        if ($existing -and $existing.partnerSecret) { $keptPartner = [string]$existing.partnerSecret }
+        if ($partnerPass.Text) { $keptPartner = Protect-Text $partnerPass.Text }
+        $keptUser = $partnerUser.Text.Trim()
+        if (-not $keptUser -and $existing -and $existing.partnerUser) { $keptUser = [string]$existing.partnerUser }
         $script:cfg = [pscustomobject]@{
             server = $server.Text.Trim().TrimEnd("/")
             username = $user.Text.Trim()
@@ -271,6 +431,8 @@ function Show-Setup {
             token = ""
             role = ""
             autostart = [bool]$auto.Checked
+            partnerUser = $keptUser
+            partnerSecret = $keptPartner
         }
         $script:token = ""
         try {
@@ -293,7 +455,9 @@ if (-not $script:cfg -or -not $script:cfg.username -or -not $script:cfg.secret) 
 }
 $script:token = [string]$script:cfg.token
 $script:role = [string]$script:cfg.role
+Import-PartnerSeed
 try { $script:logo = Ensure-Logo } catch { $script:logo = $null }
+try { $script:partnerLogo = Ensure-PartnerLogo } catch { $script:partnerLogo = $null }
 
 $area = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
 $barH = 78
@@ -314,9 +478,11 @@ $script:linePen = New-Object Drawing.Pen ([Drawing.Color]::FromArgb(36, 241, 242
 $script:mutedBrush = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(154, 160, 170))
 $script:fgBrush = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(241, 242, 244))
 $script:okBrush = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(125, 186, 138))
+$script:partnerBrush = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(126, 186, 224))
+$script:partnerPen = New-Object Drawing.Pen ([Drawing.Color]::FromArgb(160, 2, 84, 147)), 1.4
 $script:badBrush = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(226, 59, 59))
 $script:labelFont = New-Object Drawing.Font "Segoe UI", 13, ([Drawing.FontStyle]::Regular), ([Drawing.GraphicsUnit]::Pixel)
-$script:valueFont = New-Object Drawing.Font "Segoe UI", 22, ([Drawing.FontStyle]::Bold), ([Drawing.GraphicsUnit]::Pixel)
+$script:valueFont = New-Object Drawing.Font "Segoe UI", 18, ([Drawing.FontStyle]::Bold), ([Drawing.GraphicsUnit]::Pixel)
 $script:closeBrush = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(154, 160, 170))
 $script:closeFont = New-Object Drawing.Font "Segoe UI", 16, ([Drawing.FontStyle]::Regular), ([Drawing.GraphicsUnit]::Pixel)
 $script:form = $form
@@ -358,29 +524,59 @@ $form.Add_Paint({
     $g.DrawLine($script:linePen, 0, ($h - 1), $w, ($h - 1))
     if ($script:logo) { $g.DrawImage($script:logo, 14, 14, 44, 48) }
     $view = $script:view
-    if (-not $view -or -not $view.Ready) {
+    $partner = $script:partner
+    $ourCount = 0
+    if ($view -and $view.Ready) { $ourCount = $(if ($view.DayMoney) { 4 } else { 2 }) }
+    $partnerCount = 4
+    $gap = 8
+    $left = 70
+    $mid = 58
+    $rightPad = 36
+    $slots = $ourCount + $partnerCount
+    if ($ourCount -eq 0) { $slots = $partnerCount; $mid = 0 }
+    $avail = [int]$w - $left - $mid - $rightPad - ($gap * [Math]::Max(0, $slots - 1))
+    $cw = [int]($avail / [Math]::Max(1, $slots))
+    if ($cw -lt 96) { $cw = 96 }
+    $step = $cw + $gap
+    $x = $left
+    if ($ourCount -eq 0) {
         $text = "Подключение…"
         if ($view -and $view.Status) { $text = [string]$view.Status }
         $g.DrawString($text, $script:valueFont, $script:badBrush, 78, 24)
+        $x = 360
     } else {
-        $count = 2
-        if ($view.DayMoney) { $count = 4 }
-        $gap = 10
-        $left = 74
-        $rightPad = 42
-        $avail = [int]$w - $left - $rightPad - ($gap * ($count - 1))
-        $cw = [int]($avail / $count)
-        $step = $cw + $gap
         $dayLabel = "Сегодня"
         if ($view.Offline) { $dayLabel = "Сегодня, нет связи" }
-        Draw-Card $g $left 8 $cw 62 $dayLabel ([string]$view.Day) $script:fgBrush
+        Draw-Card $g $x 8 $cw 62 $dayLabel ([string]$view.Day) $script:fgBrush $script:cardPen
+        $x += $step
         if ($view.DayMoney) {
-            Draw-Card $g ($left + $step) 8 $cw 62 "Сумма за сегодня" ([string]$view.DayMoney) $script:okBrush
-            Draw-Card $g ($left + $step + $step) 8 $cw 62 ([string]$view.Month) ([string]$view.MonthCount) $script:fgBrush
-            Draw-Card $g ($left + $step + $step + $step) 8 $cw 62 ("Сумма за " + $view.Month.ToLower()) ([string]$view.MonthMoney) $script:okBrush
+            Draw-Card $g $x 8 $cw 62 "Сумма за сегодня" ([string]$view.DayMoney) $script:okBrush $script:cardPen
+            $x += $step
+            Draw-Card $g $x 8 $cw 62 ([string]$view.Month) ([string]$view.MonthCount) $script:fgBrush $script:cardPen
+            $x += $step
+            Draw-Card $g $x 8 $cw 62 ("Сумма за " + $view.Month.ToLower()) ([string]$view.MonthMoney) $script:okBrush $script:cardPen
+            $x += $step
         } else {
-            Draw-Card $g ($left + $step) 8 $cw 62 ([string]$view.Month) ([string]$view.MonthCount) $script:fgBrush
+            Draw-Card $g $x 8 $cw 62 ([string]$view.Month) ([string]$view.MonthCount) $script:fgBrush $script:cardPen
+            $x += $step
         }
+    }
+    $g.DrawLine($script:partnerPen, $x, 16, $x, 62)
+    $x += 12
+    if ($script:partnerLogo) { $g.DrawImage($script:partnerLogo, $x, 16, 44, 44) }
+    $x += 52
+    if (-not $partner -or -not $partner.Ready) {
+        $note = "Подключение…"
+        if ($partner -and $partner.Status) { $note = [string]$partner.Status }
+        Draw-Card $g $x 8 280 62 "Дорожная сеть" $note $script:partnerBrush $script:partnerPen
+    } else {
+        Draw-Card $g $x 8 $cw 62 "Стоянка сегодня" ([string]$partner.Today) $script:partnerBrush $script:partnerPen
+        $x += $step
+        Draw-Card $g $x 8 $cw 62 "Стоянка за месяц" ([string]$partner.Month) $script:partnerBrush $script:partnerPen
+        $x += $step
+        Draw-Card $g $x 8 $cw 62 "Отзывы" ([string]$partner.Reviews) $script:partnerBrush $script:partnerPen
+        $x += $step
+        Draw-Card $g $x 8 $cw 62 "Душ и прачечная" ([string]$partner.Services) $script:partnerBrush $script:partnerPen
     }
     $g.DrawString("×", $script:closeFont, $script:closeBrush, ($w - 26), 26)
 })
@@ -390,12 +586,14 @@ $form.Add_MouseClick({
 
 $poll = New-Object Windows.Forms.Timer
 $poll.Interval = 45000
-$poll.Add_Tick({ Update-Stats })
+$poll.Add_Tick({ Update-Stats; Update-Partner })
 $poll.Start()
-$form.Add_Shown({ Update-Stats })
+$form.Add_Shown({ Update-Stats; Update-Partner })
 [void]$form.ShowDialog()
 $poll.Stop()
 if ($script:logo) { $script:logo.Dispose() }
 $script:cardBrush.Dispose(); $script:cardFill.Dispose(); $script:cardPen.Dispose()
 $script:linePen.Dispose(); $script:mutedBrush.Dispose(); $script:fgBrush.Dispose(); $script:okBrush.Dispose(); $script:badBrush.Dispose()
 $script:labelFont.Dispose(); $script:valueFont.Dispose(); $script:closeBrush.Dispose(); $script:closeFont.Dispose()
+$script:partnerBrush.Dispose(); $script:partnerPen.Dispose()
+if ($script:partnerLogo) { $script:partnerLogo.Dispose() }
