@@ -406,10 +406,21 @@ function Build-View {
     }
 }
 
+function Fit-Font($g, [string]$text, $font, [single]$maxW) {
+    if (-not $text) { return $font }
+    $size = $g.MeasureString($text, $font)
+    if ($size.Width -le ($maxW + 1)) { return $font }
+    $px = [Math]::Floor($font.Size * $maxW / [Math]::Max(1, $size.Width))
+    if ($px -ge $font.Size) { return $font }
+    if ($px -lt 12) { $px = 12 }
+    return New-Object Drawing.Font $font.FontFamily.Name, ([single]$px), $font.Style, ([Drawing.GraphicsUnit]::Pixel)
+}
 function Draw-Card($g, [int]$x, [int]$y, [int]$w, [int]$h, [string]$label, [string]$value, $valueBrush, $pen) {
     if (-not $pen) { $pen = $script:cardPen }
+    if ($w -lt 24 -or $h -lt 24) { return }
     $path = New-Object Drawing.Drawing2D.GraphicsPath
-    $d = 16
+    $d = 14
+    if (($w -lt 36) -or ($h -lt 36)) { $d = 8 }
     $path.AddArc($x, $y, $d, $d, 180, 90)
     $path.AddArc(($x + $w - $d), $y, $d, $d, 270, 90)
     $path.AddArc(($x + $w - $d), ($y + $h - $d), $d, $d, 0, 90)
@@ -419,13 +430,25 @@ function Draw-Card($g, [int]$x, [int]$y, [int]$w, [int]$h, [string]$label, [stri
     $g.DrawPath($pen, $path)
     $path.Dispose()
     $state = $g.Save()
-    $clipX = [int]($x + 10)
-    $clipY = [int]($y + 2)
+    $clipX = [int]($x + 8)
+    $clipY = [int]($y + 4)
     $clipW = [int]($w - 16)
-    $clipH = [int]($h - 4)
+    $clipH = [int]($h - 8)
+    if ($clipW -lt 8) { $clipW = 8 }
+    if ($clipH -lt 8) { $clipH = 8 }
     $g.SetClip((New-Object Drawing.Rectangle -ArgumentList $clipX, $clipY, $clipW, $clipH))
-    $g.DrawString($label, $script:labelFont, $script:mutedBrush, ($x + 12), ($y + $script:ui.LabelDy))
-    $g.DrawString($value, $script:valueFont, $valueBrush, ($x + 12), ($y + $script:ui.ValueDy))
+    $maxW = [single]($w - 20)
+    $labelFont = Fit-Font $g $label $script:labelFont $maxW
+    $valueFont = Fit-Font $g $value $script:valueFont $maxW
+    $lh = $labelFont.GetHeight($g)
+    $vh = $valueFont.GetHeight($g)
+    $block = $lh + 6 + $vh
+    $ty = $y + (($h - $block) / 2)
+    if ($ty -lt ($y + 6)) { $ty = $y + 6 }
+    $g.DrawString($label, $labelFont, $script:mutedBrush, ($x + 10), $ty)
+    $g.DrawString($value, $valueFont, $valueBrush, ($x + 10), ($ty + $lh + 6))
+    if (-not [object]::ReferenceEquals($labelFont, $script:labelFont)) { $labelFont.Dispose() }
+    if (-not [object]::ReferenceEquals($valueFont, $script:valueFont)) { $valueFont.Dispose() }
     $g.Restore($state)
 }
 
@@ -474,10 +497,11 @@ function Draw-Row($g, [single]$top, [int]$mode) {
         $ds.Add([pscustomobject]@{ L = "Всего за месяц"; V = [string]$partner.TotalMonth; Money = $true })
     }
     $slots = $our.Count + $ds.Count
-    $mid = $ui.Mid
-    $avail = [int]$w - $left - $mid - $rightPad - ($gap * [Math]::Max(0, $slots - 1))
+    $mid = [int]$ui.Mid
+    $gaps = $gap * [Math]::Max(0, $slots - 1)
+    $avail = [int]$w - $left - $mid - $rightPad - $gaps
     $cw = [int]($avail / [Math]::Max(1, $slots))
-    if ($cw -lt 88) { $cw = 88 }
+    if ($cw -lt 70) { $cw = 70 }
     $step = $cw + $gap
     $y = [int]($top + $ui.CardTop)
     $x = $left
@@ -487,7 +511,9 @@ function Draw-Row($g, [single]$top, [int]$mode) {
         Draw-Card $g $x $y $cw $ui.CardH ([string]$card.L) ([string]$card.V) $brush $script:cardPen
         $x += $step
     }
-    $g.DrawLine($script:partnerPen, $x, ($y + 10), $x, ($y + $ui.CardH - 10))
+    $lineTop = $y + 12
+    $lineBot = $y + $ui.CardH - 12
+    $g.DrawLine($script:partnerPen, $x, $lineTop, $x, $lineBot)
     $x += 12
     $logoY = $y + [int](($ui.CardH - $ui.Logo) / 2)
     if ($script:partnerLogo) { $g.DrawImage($script:partnerLogo, [int]$x, $logoY, $ui.Logo, $ui.Logo) }
@@ -653,9 +679,11 @@ $script:collapsed = $false
 
 function Update-BarChrome {
     if ($script:large) {
-        $script:ui = [pscustomobject]@{ Bar = 118; CardH = 98; CardTop = 10; LabelDy = 14; ValueDy = 48; Label = 18; Value = 28; Close = 18; Logo = 72; Left = 100; Mid = 100; Right = 58; Gap = 10; Chip = 270 }
+        $logo = 60
+        $script:ui = [pscustomobject]@{ Bar = 108; CardH = 90; CardTop = 9; Label = 16; Value = 22; Close = 16; Logo = $logo; Left = 88; Mid = (24 + $logo); Right = 76; Gap = 8; Chip = 280 }
     } else {
-        $script:ui = [pscustomobject]@{ Bar = 78; CardH = 62; CardTop = 8; LabelDy = 8; ValueDy = 28; Label = 13; Value = 16; Close = 16; Logo = 44; Left = 70; Mid = 68; Right = 52; Gap = 8; Chip = 188 }
+        $logo = 44
+        $script:ui = [pscustomobject]@{ Bar = 78; CardH = 62; CardTop = 8; Label = 13; Value = 16; Close = 15; Logo = $logo; Left = 70; Mid = (24 + $logo); Right = 64; Gap = 8; Chip = 200 }
     }
     if ($script:labelFont) { $script:labelFont.Dispose() }
     if ($script:valueFont) { $script:valueFont.Dispose() }
@@ -693,18 +721,33 @@ function Set-BarLarge([int]$mode) {
     Apply-BarLayout
 }
 function Draw-SideButtons($g, [single]$w, [single]$h) {
-    $band = [int]($h / 3)
-    $x0 = $w - $script:ui.Right
+    $x0 = $w - [single]$script:ui.Right
     $g.DrawLine($script:linePen, $x0, 8, $x0, ($h - 8))
-    $g.DrawLine($script:linePen, ($x0 + 8), $band, ($w - 8), $band)
-    $g.DrawLine($script:linePen, ($x0 + 8), ($band * 2), ($w - 8), ($band * 2))
-    $g.DrawString("×", $script:closeFont, $script:closeBrush, ($w - 32), 6)
-    $sizeMark = "A+"
-    if ($script:large) { $sizeMark = "A" }
-    $g.DrawString($sizeMark, $script:closeFont, $script:closeBrush, ($w - 34), ($band + 4))
-    $mark = "–"
-    if ($script:collapsed) { $mark = "+" }
-    $g.DrawString($mark, $script:closeFont, $script:closeBrush, ($w - 30), (($band * 2) + 4))
+    $marks = New-Object System.Collections.Generic.List[string]
+    $marks.Add("×")
+    if ($script:large) { $marks.Add("A") } else { $marks.Add("A+") }
+    if ($script:collapsed) { $marks.Add("+") } else { $marks.Add("–") }
+    for ($i = 1; $i -lt 3; $i++) {
+        $yy = [Math]::Floor($h * $i / 3.0)
+        $g.DrawLine($script:linePen, ($x0 + 8), $yy, ($w - 8), $yy)
+    }
+    for ($i = 0; $i -lt 3; $i++) {
+        $top = [Math]::Floor($h * $i / 3.0)
+        $bot = [Math]::Floor($h * ($i + 1) / 3.0)
+        $text = [string]$marks[$i]
+        $size = $g.MeasureString($text, $script:closeFont)
+        $tx = $x0 + (([single]$script:ui.Right - $size.Width) / 2)
+        $ty = $top + (($bot - $top - $size.Height) / 2)
+        $g.DrawString($text, $script:closeFont, $script:closeBrush, $tx, $ty)
+    }
+}
+function Hit-Band([int]$y, [int]$h) {
+    if ($h -le 0) { return 0 }
+    if ($y -lt 0) { return 0 }
+    $band = [Math]::Floor($y * 3.0 / $h)
+    if ($band -lt 0) { return 0 }
+    if ($band -gt 2) { return 2 }
+    return [int]$band
 }
 
 $menu = New-Object Windows.Forms.ContextMenuStrip
@@ -721,13 +764,14 @@ $miExit.Add_Click({ $form.Close() })
 
 $drag = $false
 $down = [Drawing.Point]::Empty
+$script:clickLock = [datetime]::MinValue
 $form.Add_MouseDown({
     if ($_.Button -ne "Left") { return }
+    if (((Get-Date) - $script:clickLock).TotalMilliseconds -lt 400) { return }
     $edge = $form.ClientSize.Width - [int]$script:ui.Right
     if ($_.X -ge $edge) {
-        $band = [int]($_.Y * 3 / [Math]::Max(1, $form.ClientSize.Height))
-        if ($band -lt 0) { $band = 0 }
-        if ($band -gt 2) { $band = 2 }
+        $band = Hit-Band $_.Y $form.ClientSize.Height
+        $script:clickLock = Get-Date
         if ($band -eq 0) { $form.Close(); return }
         if ($band -eq 1) {
             if ($script:large) { Set-BarLarge 0 } else { Set-BarLarge 1 }
@@ -736,7 +780,11 @@ $form.Add_MouseDown({
         if ($script:collapsed) { Set-BarCollapsed 0 } else { Set-BarCollapsed 1 }
         return
     }
-    if ($script:collapsed) { Set-BarCollapsed 0; return }
+    if ($script:collapsed) {
+        $script:clickLock = Get-Date
+        Set-BarCollapsed 0
+        return
+    }
     $script:drag = $true
     $script:down = $_.Location
 })
