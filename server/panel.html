@@ -300,6 +300,7 @@
       <select id="editUserRole">
         <option value="operator">Оператор</option>
         <option value="manager">Менеджер ТТ</option>
+        <option value="screen">Строка</option>
         <option value="admin">Администратор</option>
       </select>
       <label>Комментарий</label>
@@ -386,6 +387,7 @@ function show(tab) {
 function roleTitle(value) {
   if (value === "admin") return "Администратор";
   if (value === "manager") return "Менеджер ТТ";
+  if (value === "screen") return "Строка";
   return "Оператор";
 }
 function enter() {
@@ -395,8 +397,9 @@ function enter() {
   document.getElementById("who").textContent = name + " · " + roleTitle(role);
   document.getElementById("tabUsers").classList.toggle("hidden", role !== "admin");
   document.getElementById("tabData").classList.toggle("hidden", role !== "admin");
-  document.getElementById("tabFleet").classList.toggle("hidden", role === "manager");
-  show("journal");
+  document.getElementById("tabFleet").classList.toggle("hidden", role === "manager" || role === "screen");
+  document.querySelector('.tabs button[data-tab="journal"]').classList.toggle("hidden", role === "screen");
+  show(role === "screen" ? "stats" : "journal");
 }
 function logout() {
   token = role = name = "";
@@ -845,6 +848,7 @@ async function loadUsers() {
       <select id="nr">
         <option value="operator">Оператор</option>
         <option value="manager">Менеджер ТТ</option>
+        <option value="screen">Строка</option>
         <option value="admin">Администратор</option>
       </select>
       <label>Комментарий</label>

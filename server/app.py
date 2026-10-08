@@ -146,8 +146,16 @@ def admin_only(user: sqlite3.Row = Depends(current_user)) -> sqlite3.Row:
 
 
 def writer(user: sqlite3.Row = Depends(current_user)) -> sqlite3.Row:
+    if user["role"] == "screen":
+        raise HTTPException(403, "Эта учётка только для бегущей строки")
     if user["role"] == "manager":
         raise HTTPException(403, "Для этой учётки доступен только просмотр")
+    return user
+
+
+def office(user: sqlite3.Row = Depends(current_user)) -> sqlite3.Row:
+    if user["role"] == "screen":
+        raise HTTPException(403, "Эта учётка только для бегущей строки")
     return user
 
 
@@ -394,7 +402,7 @@ def journal(
     unauthorized: int = 0,
     author: str = "",
     date: str = "",
-    user: sqlite3.Row = Depends(current_user),
+    user: sqlite3.Row = Depends(office),
 ):
     text = q.strip().casefold()
     page = limit if limit in (10, 20, 50, 100, 200) else 50
@@ -685,7 +693,7 @@ def excel_text(value: str) -> str:
 
 
 @app.get("/api/export.xls")
-def export_excel(user: sqlite3.Row = Depends(current_user)):
+def export_excel(user: sqlite3.Row = Depends(office)):
     payload = workbook_xml().encode("utf-8")
     return Response(
         content=payload,
@@ -794,7 +802,7 @@ async def create_user(request: Request, actor: sqlite3.Row = Depends(admin_only)
     body = await request.json()
     username = str(body.get("username", "")).strip()
     password = str(body.get("password", ""))
-    role = {"admin": "admin", "manager": "manager"}.get(str(body.get("role") or ""), "operator")
+    role = {"admin": "admin", "manager": "manager", "screen": "screen"}.get(str(body.get("role") or ""), "operator")
     comment = str(body.get("comment", "")).strip()
     if len(username) < 2 or len(password) < 4:
         raise HTTPException(400, "Логин от 2 символов, пароль от 4")
@@ -815,7 +823,7 @@ async def update_user(user_id: int, request: Request, actor: sqlite3.Row = Depen
     body = await request.json()
     username = str(body.get("username", "")).strip()
     password = str(body.get("password") or "")
-    role = {"admin": "admin", "manager": "manager"}.get(str(body.get("role") or ""), "operator")
+    role = {"admin": "admin", "manager": "manager", "screen": "screen"}.get(str(body.get("role") or ""), "operator")
     comment = str(body.get("comment", "")).strip()
     if len(username) < 2:
         raise HTTPException(400, "Логин от 2 символов")
@@ -872,7 +880,7 @@ def delete_user(user_id: int, actor: sqlite3.Row = Depends(admin_only)):
 
 
 @app.get("/api/changes")
-def changes(since: int = 0, user: sqlite3.Row = Depends(current_user)):
+def changes(since: int = 0, user: sqlite3.Row = Depends(office)):
     with db() as conn:
         rows = conn.execute(
             "SELECT * FROM plates WHERE updated_at > ? ORDER BY updated_at",
@@ -1003,7 +1011,7 @@ async def edit_plate(uid: str, request: Request, user: sqlite3.Row = Depends(wri
 
 
 @app.get("/api/photos/{uid}")
-def photo(uid: str, user: sqlite3.Row = Depends(current_user)):
+def photo(uid: str, user: sqlite3.Row = Depends(office)):
     path = PHOTO_DIR / f"{uid}.jpg"
     if not path.is_file():
         raise HTTPException(404, "Нет фото")
@@ -1011,7 +1019,7 @@ def photo(uid: str, user: sqlite3.Row = Depends(current_user)):
 
 
 @app.get("/api/fleet")
-def get_fleet(user: sqlite3.Row = Depends(current_user)):
+def get_fleet(user: sqlite3.Row = Depends(office)):
     return {
         "revision": int(FLEET_PATH.stat().st_mtime * 1000) if FLEET_PATH.is_file() else 0,
         "rows": read_fleet(),
