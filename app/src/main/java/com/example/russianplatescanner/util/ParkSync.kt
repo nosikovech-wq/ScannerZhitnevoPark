@@ -154,7 +154,8 @@ object ParkSync {
             rows.put(JSONObject()
                 .put("tractor", crew.tractor)
                 .put("trailer", crew.trailer)
-                .put("driver", crew.driver))
+                .put("driver", crew.driver)
+                .put("phone", crew.phone))
         }
         val response = request(context, "PUT", "/api/fleet", JSONObject().put("rows", rows).toString())
         val revision = response.optLong("revision")
@@ -215,7 +216,12 @@ object ParkSync {
         val crews = buildList {
             for (index in 0 until rows.length()) {
                 val row = rows.getJSONObject(index)
-                add(Crew(row.optString("tractor"), row.optString("trailer"), row.optString("driver")))
+                add(Crew(
+                    row.optString("tractor"),
+                    row.optString("trailer"),
+                    row.optString("driver"),
+                    row.optString("phone")
+                ))
             }
         }
         if (crews.isNotEmpty()) {

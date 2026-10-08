@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,9 +20,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.content.Intent
+import android.net.Uri
 import coil.compose.AsyncImage
 import com.example.russianplatescanner.PlateApp
 import com.example.russianplatescanner.ui.theme.*
+import com.example.russianplatescanner.util.FleetBook
 import com.example.russianplatescanner.util.formatPlateUi
 import java.text.SimpleDateFormat
 import java.util.*
@@ -98,6 +102,42 @@ fun DetailScreen(
                 modifier = Modifier.align(Alignment.CenterHorizontally)
             )
             Spacer(Modifier.height(16.dp))
+            val crew = remember(p.number) { FleetBook.match(p.number) }
+            if (crew != null && (crew.driver.isNotBlank() || crew.phone.isNotBlank())) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Surface)
+                        .padding(16.dp)
+                ) {
+                    if (crew.driver.isNotBlank()) {
+                        Text("Водитель", color = Subtle, fontSize = 12.sp)
+                        Text(crew.driver, color = Fg, fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                    }
+                    if (crew.phone.isNotBlank()) {
+                        if (crew.driver.isNotBlank()) Spacer(Modifier.height(10.dp))
+                        Text("Телефон", color = Subtle, fontSize = 12.sp)
+                        Text(crew.phone, color = Fg, fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.height(12.dp))
+                        Button(
+                            onClick = {
+                                val dial = crew.phone.filter { it.isDigit() || it == '+' }
+                                if (dial.isNotBlank()) {
+                                    context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$dial")))
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Ok, contentColor = AccentFg)
+                        ) {
+                            Icon(Icons.Outlined.Phone, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Позвонить")
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
             Text(
                 p.note?.takeIf { it.isNotBlank() } ?: "Заметка отсутствует",
                 color = if (p.note.isNullOrBlank()) Muted else Fg,

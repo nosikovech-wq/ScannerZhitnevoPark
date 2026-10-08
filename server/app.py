@@ -323,27 +323,33 @@ def read_fleet() -> list[dict]:
         if not line or line.lower().startswith("номер"):
             continue
         parts = [part.strip() for part in line.split(";")]
-        while len(parts) < 3:
+        while len(parts) < 4:
             parts.append("")
         if not parts[0] and not parts[1]:
             continue
-        rows.append({"tractor": parts[0], "trailer": parts[1], "driver": parts[2]})
+        rows.append({
+            "tractor": parts[0],
+            "trailer": parts[1],
+            "driver": parts[2],
+            "phone": parts[3],
+        })
     rows.sort(key=fleet_sort_key)
     return rows
 
 
 def write_fleet(rows: list[dict]) -> None:
-    lines = ["Номер тягача;Номер прицепа;ФИО"]
+    lines = ["Номер тягача;Номер прицепа;ФИО;Телефон"]
     stored = []
     for row in rows:
         tractor = str(row.get("tractor", "")).strip()
         trailer = str(row.get("trailer", "")).strip()
         driver = str(row.get("driver", "")).strip()
+        phone = str(row.get("phone", "")).strip()
         if tractor or trailer:
-            stored.append({"tractor": tractor, "trailer": trailer, "driver": driver})
+            stored.append({"tractor": tractor, "trailer": trailer, "driver": driver, "phone": phone})
     stored.sort(key=fleet_sort_key)
     for row in stored:
-        lines.append(f"{row['tractor']};{row['trailer']};{row['driver']}")
+        lines.append(f"{row['tractor']};{row['trailer']};{row['driver']};{row['phone']}")
     FLEET_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -1024,6 +1030,7 @@ async def add_fleet_row(request: Request, user: sqlite3.Row = Depends(admin_only
     tractor = str(body.get("tractor") or "").strip()
     trailer = str(body.get("trailer") or "").strip()
     driver = str(body.get("driver") or "").strip()
+    phone = str(body.get("phone") or "").strip()
     if not tractor:
         raise HTTPException(400, "Нужен номер тягача")
     tractor_key = normalize_plate(tractor)
@@ -1034,7 +1041,7 @@ async def add_fleet_row(request: Request, user: sqlite3.Row = Depends(admin_only
             raise HTTPException(409, "Такой тягач уже есть в справочнике")
         if trailer_key and normalize_plate(row["trailer"]) == trailer_key:
             raise HTTPException(409, "Такой прицеп уже есть в справочнике")
-    rows.insert(0, {"tractor": tractor, "trailer": trailer, "driver": driver})
+    rows.insert(0, {"tractor": tractor, "trailer": trailer, "driver": driver, "phone": phone})
     write_fleet(rows)
     return {"ok": True}
 

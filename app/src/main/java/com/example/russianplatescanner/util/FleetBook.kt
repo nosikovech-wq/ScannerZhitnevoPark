@@ -6,12 +6,13 @@ import java.io.File
 data class Crew(
     val tractor: String,
     val trailer: String,
-    val driver: String
+    val driver: String,
+    val phone: String = ""
 )
 
 object FleetBook {
     private val table = """
-Номер тягача;Номер прицепа;ФИО
+Номер тягача;Номер прицепа;ФИО;Телефон
 А099КК 761;СО3268 61;Горщар Сергей Антонович
 А122ЕВ 761;СЕ6125 61;Шамшурин Юрий Николаевич
 А673ВВ 761;СН0247 61;Беланов Яков Анатольевич
@@ -135,13 +136,15 @@ object FleetBook {
         val file = File(context.filesDir, "fleet.csv")
         file.writeText(
             buildString {
-                append("Номер тягача;Номер прицепа;ФИО\n")
+                append("Номер тягача;Номер прицепа;ФИО;Телефон\n")
                 crews.forEach { crew ->
                     append(crew.tractor.trim())
                     append(';')
                     append(crew.trailer.trim())
                     append(';')
                     append(crew.driver.trim())
+                    append(';')
+                    append(crew.phone.trim())
                     append('\n')
                 }
             },
@@ -204,12 +207,14 @@ object FleetBook {
         val driverCol = column(header, hasHeader, "фио", 2).let { found ->
             if (hasHeader && found < 0) column(header, true, "вод", 2) else found
         }
+        val phoneCol = column(header, hasHeader, "тел", 3)
         return data.mapNotNull { cells ->
             fun at(index: Int) = cells.getOrNull(index).orEmpty()
             val tractor = at(tractorCol)
             val trailer = at(trailerCol)
             val driver = at(driverCol)
-            if (tractor.isBlank() && trailer.isBlank()) null else Crew(tractor, trailer, driver)
+            val phone = at(phoneCol)
+            if (tractor.isBlank() && trailer.isBlank()) null else Crew(tractor, trailer, driver, phone)
         }
     }
 
