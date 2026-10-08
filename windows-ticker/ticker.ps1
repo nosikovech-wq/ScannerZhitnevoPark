@@ -237,7 +237,9 @@ function Fetch-PartnerData([string]$token, [string]$today, [string]$tomorrow, [s
     $daySvc = Get-ServiceCounts $today $tomorrow $token
     $monthSvc = Get-ServiceCounts $monthStart $nextMonth $token
     $reviews = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/review/count" $null $token
-    $latest = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/review/list?limit=1&start=0" $null $token
+    $reviewStart = 0
+    if ($reviews.count) { $reviewStart = [Math]::Max(0, ([int]$reviews.count - 1)) }
+    $latest = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/review/list?limit=1&start=$reviewStart" $null $token
     return [pscustomobject]@{ DayPark = $dayPark; MonthPark = $monthPark; DaySvc = $daySvc; MonthSvc = $monthSvc; Reviews = $reviews; Latest = $latest }
 }
 function Update-Partner {
@@ -623,7 +625,7 @@ $form.FormBorderStyle = "None"
 $form.ShowInTaskbar = $true
 $form.TopMost = $true
 $form.StartPosition = "Manual"
-$form.Bounds = New-Object Drawing.Rectangle $area.X, ($area.Bottom - $barH), $area.Width, $barH
+$form.Bounds = New-Object Drawing.Rectangle $area.X, $area.Y, $area.Width, $barH
 $form.BackColor = [Drawing.Color]::FromArgb(20, 22, 26)
 $form.Text = "Житнево Парк"
 $form.GetType().GetProperty("DoubleBuffered", [Reflection.BindingFlags]"Instance,NonPublic").SetValue($form, $true, $null)
@@ -709,7 +711,7 @@ $slideTimer.Interval = 30
 $slideTimer.Add_Tick({
     if (-not $script:form) { return }
     if (-not $script:sliding) {
-        if (((Get-Date) - $script:slideHold).TotalSeconds -ge 8) { $script:sliding = $true }
+        if (((Get-Date) - $script:slideHold).TotalSeconds -ge 14) { $script:sliding = $true }
         return
     }
     $script:slideY += ($script:form.ClientSize.Height / 18.0)
