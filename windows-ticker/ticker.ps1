@@ -202,24 +202,19 @@ function Update-Strip {
     $probe = New-Object Drawing.Bitmap 8, 8
     $pg = [Drawing.Graphics]::FromImage($probe)
     $pg.TextRenderingHint = "AntiAliasGridFit"
-    $format = [Drawing.StringFormat]::GenericTypographic
-    $width = 8.0
-    foreach ($p in $items) {
-        $size = $pg.MeasureString($p.Text, $p.Font, 10000, $format)
-        $width += $size.Width
-    }
+    $width = 24.0
+    foreach ($p in $items) { $width += $pg.MeasureString([string]$p.Text, $p.Font).Width }
     $pg.Dispose(); $probe.Dispose()
-    $width = [Math]::Max(240, [int][Math]::Ceiling($width) + 96)
-    $bmp = New-Object Drawing.Bitmap ([int]$width), 46
+    $bmpW = [int][Math]::Ceiling($width) + 120
+    $bmp = New-Object Drawing.Bitmap $bmpW, 40
     $g = [Drawing.Graphics]::FromImage($bmp)
-    $g.SmoothingMode = "AntiAlias"
     $g.TextRenderingHint = "AntiAliasGridFit"
     $g.Clear([Drawing.Color]::Transparent)
     $x = 0.0
     foreach ($p in $items) {
         $brush = New-Object Drawing.SolidBrush $p.Color
-        $g.DrawString($p.Text, $p.Font, $brush, $x, 12, $format)
-        $x += $g.MeasureString($p.Text, $p.Font, 10000, $format).Width
+        $g.DrawString([string]$p.Text, $p.Font, $brush, $x, 6)
+        $x += $g.MeasureString([string]$p.Text, $p.Font).Width
         $brush.Dispose()
     }
     $g.Dispose()
@@ -327,37 +322,6 @@ function Show-Setup {
     return $result -eq "OK"
 }
 
-function Draw-Truck($g, [single]$x, [single]$y, [single]$angle) {
-    $g.SmoothingMode = "AntiAlias"
-    $body = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(241, 242, 244))
-    $glass = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(28, 31, 37))
-    $stripe = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(226, 59, 59))
-    $tire = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(11, 12, 14))
-    $hub = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(241, 242, 244))
-    $g.FillRectangle($body, ($x + 2), ($y + 7), 78, 16)
-    $g.FillRectangle($stripe, ($x + 2), ($y + 19), 78, 3)
-    $cab = New-Object Drawing.Drawing2D.GraphicsPath
-    $cab.AddArc(($x + 78), ($y + 6), 10, 10, 180, 90)
-    $cab.AddArc(($x + 112), ($y + 6), 10, 10, 270, 90)
-    $cab.AddLine(($x + 122), ($y + 16), ($x + 122), ($y + 23))
-    $cab.AddLine(($x + 78), ($y + 23), ($x + 78), ($y + 11))
-    $cab.CloseFigure()
-    $g.FillPath($body, $cab)
-    $g.FillRectangle($glass, ($x + 96), ($y + 9), 18, 8)
-    foreach ($cx in @(($x + 18), ($x + 40), ($x + 86), ($x + 108))) {
-        $wheel = [single]$cx
-        $g.FillEllipse($tire, ($wheel - 6), ($y + 17), 12, 12)
-        $g.FillEllipse($hub, ($wheel - 2), ($y + 21), 4, 4)
-        $pen = New-Object Drawing.Pen ([Drawing.Color]::FromArgb(11, 12, 14)), 1.2
-        $rad = $angle * [Math]::PI / 180.0
-        $cos = [single]([Math]::Cos($rad) * 4)
-        $sin = [single]([Math]::Sin($rad) * 4)
-        $g.DrawLine($pen, ($wheel - $cos), (($y + 23) - $sin), ($wheel + $cos), (($y + 23) + $sin))
-        $pen.Dispose()
-    }
-    $body.Dispose(); $glass.Dispose(); $stripe.Dispose(); $tire.Dispose(); $hub.Dispose()
-}
-
 $script:cfg = Read-Config
 if (-not $script:cfg -or -not $script:cfg.username -or -not $script:cfg.secret) {
     if (-not (Show-Setup)) { return }
@@ -367,28 +331,16 @@ $script:role = [string]$script:cfg.role
 try { $script:logo = Ensure-Logo } catch { $script:logo = $null }
 
 $area = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-$barW = [Math]::Min(980, ($area.Width - 48))
-$barH = 84
-$barX = $area.X + [int](($area.Width - $barW) / 2)
-$barY = $area.Bottom - $barH - 16
+$barH = 58
 $form = New-Object Windows.Forms.Form
 $form.FormBorderStyle = "None"
 $form.ShowInTaskbar = $true
 $form.TopMost = $true
 $form.StartPosition = "Manual"
-$form.Bounds = New-Object Drawing.Rectangle $barX, $barY, $barW, $barH
+$form.Bounds = New-Object Drawing.Rectangle $area.X, ($area.Bottom - $barH), $area.Width, $barH
 $form.BackColor = [Drawing.Color]::FromArgb(20, 22, 26)
 $form.Text = "Житнево Парк"
 $form.GetType().GetProperty("DoubleBuffered", [Reflection.BindingFlags]"Instance,NonPublic").SetValue($form, $true, $null)
-
-$edge = New-Object Drawing.Drawing2D.GraphicsPath
-$radius = 22
-$edge.AddArc(0, 0, $radius, $radius, 180, 90)
-$edge.AddArc(($barW - $radius - 1), 0, $radius, $radius, 270, 90)
-$edge.AddArc(($barW - $radius - 1), ($barH - $radius - 1), $radius, $radius, 0, 90)
-$edge.AddArc(0, ($barH - $radius - 1), $radius, $radius, 90, 90)
-$edge.CloseFigure()
-$form.Region = New-Object Drawing.Region $edge
 
 $script:cardBrush = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(20, 22, 26))
 $script:linePen = New-Object Drawing.Pen ([Drawing.Color]::FromArgb(36, 241, 242, 244)), 1
@@ -428,33 +380,29 @@ $form.Add_Paint({
     $w = [single]$form.ClientSize.Width
     $h = [single]$form.ClientSize.Height
     $g.FillRectangle($script:cardBrush, 0, 0, $w, $h)
-    $g.DrawLine($script:linePen, 78, 16, 78, 48)
-    if ($script:logo) { $g.DrawImage($script:logo, 16, 12, 46, 50) }
+    $g.DrawLine($script:linePen, 0, 0, $w, 0)
+    $g.DrawLine($script:linePen, 72, 12, 72, ($h - 12))
+    if ($script:logo) { $g.DrawImage($script:logo, 12, 6, 48, 46) }
 
-    $clip = New-Object Drawing.Rectangle 90, 0, ([int]$w - 132), 56
+    $clip = New-Object Drawing.Rectangle 84, 0, ([int]$w - 124), ([int]$h)
     $g.SetClip($clip)
     if ($script:strip -and $script:stripWidth -gt 1) {
         $offset = [single]($script:scroll % $script:stripWidth)
         $left = New-Object Drawing.RectangleF
-        $left.X = [single](90 - $offset)
-        $left.Y = 2
+        $left.X = [single](84 - $offset)
+        $left.Y = 8
         $left.Width = $script:strip.Width
         $left.Height = $script:strip.Height
         $g.DrawImage($script:strip, $left)
         $right = New-Object Drawing.RectangleF
-        $right.X = [single](90 - $offset + $script:stripWidth)
-        $right.Y = 2
+        $right.X = [single](84 - $offset + $script:stripWidth)
+        $right.Y = 8
         $right.Width = $script:strip.Width
         $right.Height = $script:strip.Height
         $g.DrawImage($script:strip, $right)
     }
     $g.ResetClip()
-
-    $g.DrawLine($script:linePen, 16, 60, ($w - 16), 60)
-    $lane = $w + 170
-    $tx = [single](($script:truck % $lane) - 150)
-    Draw-Truck $g $tx 52 ([single]$script:wheel)
-    $g.DrawString("×", $script:closeFont, $script:closeBrush, ($w - 26), 10)
+    $g.DrawString("×", $script:closeFont, $script:closeBrush, ($w - 26), 16)
 })
 $form.Add_MouseClick({
     if ($_.Button -eq "Left" -and $_.X -gt ($form.ClientSize.Width - 36) -and $_.Y -lt 36) { $form.Close() }
@@ -469,9 +417,6 @@ $timer.Add_Tick({
     if ($script:stripWidth -gt 1) {
         $script:scroll = ($script:scroll + (46 * $dt)) % $script:stripWidth
     }
-    $script:distance += 100 * $dt
-    $script:truck = ($script:truck + (100 * $dt)) % ($form.ClientSize.Width + 170)
-    $script:wheel = ($script:distance / 6.5) * (180.0 / [Math]::PI)
     $form.Invalidate()
 })
 $timer.Start()
