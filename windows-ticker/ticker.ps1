@@ -320,17 +320,25 @@ function Draw-Truck($g, [float]$x, [float]$y, [float]$angle) {
     ))
     $lamp = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(224, 196, 120))
     $g.FillRectangle($lamp, $x + 140, $y + 22, 4, 3)
-    foreach ($cx in @($x + 52), ($x + 78), ($x + 112), ($x + 130)) {
-        $g.FillEllipse((New-Object Drawing.SolidBrush $tire), $cx - 7, $y + 20, 14, 14)
-        $g.FillEllipse((New-Object Drawing.SolidBrush $hub), $cx - 3, $y + 24, 6, 6)
+    $tireBrush = New-Object Drawing.SolidBrush $tire
+    $hubBrush = New-Object Drawing.SolidBrush $hub
+    foreach ($cx in @(($x + 52), ($x + 78), ($x + 112), ($x + 130))) {
+        $wheel = [single]$cx
+        $g.FillEllipse($tireBrush, ($wheel - 7), ($y + 20), 14, 14)
+        $g.FillEllipse($hubBrush, ($wheel - 3), ($y + 24), 6, 6)
         $pen = New-Object Drawing.Pen $dark, 1.4
         $rad = $angle * [Math]::PI / 180.0
         for ($k = 0; $k -lt 3; $k++) {
             $a = $rad + $k * [Math]::PI / 3.0
-            $g.DrawLine($pen, [single]($cx + [Math]::Cos($a) * 1.5), [single]($y + 27 + [Math]::Sin($a) * 1.5), [single]($cx + [Math]::Cos($a) * 5), [single]($y + 27 + [Math]::Sin($a) * 5))
+            $x1 = [single]($wheel + [Math]::Cos($a) * 1.5)
+            $y1 = [single]($y + 27 + [Math]::Sin($a) * 1.5)
+            $x2 = [single]($wheel + [Math]::Cos($a) * 5)
+            $y2 = [single]($y + 27 + [Math]::Sin($a) * 5)
+            $g.DrawLine($pen, $x1, $y1, $x2, $y2)
         }
         $pen.Dispose()
     }
+    $tireBrush.Dispose(); $hubBrush.Dispose()
     $body.Dispose(); $stripe.Dispose(); $win.Dispose(); $lamp.Dispose()
 }
 
