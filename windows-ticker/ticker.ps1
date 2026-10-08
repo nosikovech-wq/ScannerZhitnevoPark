@@ -311,6 +311,21 @@ function Import-PartnerSeed {
     Remove-Item $seedPath -Force
 }
 
+function Ensure-PartnerAccount {
+    if ($script:cfg.partnerUser -and $script:cfg.partnerSecret) { return }
+    $script:cfg = [pscustomobject]@{
+        server = [string]$script:cfg.server
+        username = [string]$script:cfg.username
+        secret = [string]$script:cfg.secret
+        token = [string]$script:cfg.token
+        role = [string]$script:cfg.role
+        autostart = [bool]$script:cfg.autostart
+        partnerUser = "a8a155f617"
+        partnerSecret = (Protect-Text "c1081a1507")
+    }
+    Save-Config $script:cfg
+}
+
 function Build-View {
     $months = @("Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь")
     if (-not $script:stats) {
@@ -468,6 +483,7 @@ if (-not $script:cfg -or -not $script:cfg.username -or -not $script:cfg.secret) 
 $script:token = [string]$script:cfg.token
 $script:role = [string]$script:cfg.role
 Import-PartnerSeed
+Ensure-PartnerAccount
 try { $script:logo = Ensure-Logo } catch { $script:logo = $null }
 try { $script:partnerLogo = Ensure-PartnerLogo } catch { $script:partnerLogo = $null }
 
