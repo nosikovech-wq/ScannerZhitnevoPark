@@ -645,6 +645,31 @@ $script:valueFont = New-Object Drawing.Font "Segoe UI", 16, ([Drawing.FontStyle]
 $script:closeBrush = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(154, 160, 170))
 $script:closeFont = New-Object Drawing.Font "Segoe UI", 16, ([Drawing.FontStyle]::Regular), ([Drawing.GraphicsUnit]::Pixel)
 $script:form = $form
+$script:collapsed = $false
+
+function Set-BarCollapsed([bool]$on) {
+    $script:collapsed = $on
+    $screen = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+    if ($on) {
+        $script:form.Bounds = New-Object Drawing.Rectangle -ArgumentList $screen.X, $screen.Y, 188, 78
+    } else {
+        $script:form.Bounds = New-Object Drawing.Rectangle -ArgumentList $screen.X, $screen.Y, $screen.Width, 78
+        $script:slideY = 0
+        $script:sliding = $false
+        $script:slideHold = Get-Date
+    }
+    $script:form.Invalidate()
+}
+
+function Draw-SideButtons($g, [single]$w, [single]$h) {
+    $mid = [int]($h / 2)
+    $g.DrawLine($script:linePen, ($w - 48), 10, ($w - 48), ($h - 10))
+    $g.DrawLine($script:linePen, ($w - 42), $mid, ($w - 8), $mid)
+    $g.DrawString("×", $script:closeFont, $script:closeBrush, ($w - 31), 10)
+    $mark = "–"
+    if ($script:collapsed) { $mark = "+" }
+    $g.DrawString($mark, $script:closeFont, $script:closeBrush, ($w - 30), ($mid + 8))
+}
 
 $menu = New-Object Windows.Forms.ContextMenuStrip
 $miRefresh = $menu.Items.Add("Обновить")
@@ -662,7 +687,13 @@ $drag = $false
 $down = [Drawing.Point]::Empty
 $form.Add_MouseDown({
     if ($_.Button -ne "Left") { return }
-    if ($_.X -ge ($form.ClientSize.Width - 48)) { $form.Close(); return }
+    $edge = $form.ClientSize.Width - 48
+    $mid = [int]($form.ClientSize.Height / 2)
+    if ($_.X -ge $edge) {
+        if ($_.Y -lt $mid) { $form.Close(); return }
+        Set-BarCollapsed (-not $script:collapsed)
+        return
+    }
     $script:drag = $true
     $script:down = $_.Location
 })
@@ -684,6 +715,12 @@ $form.Add_Paint({
     $g.FillRectangle($script:cardBrush, 0, 0, $w, $h)
     $g.DrawLine($script:linePen, 0, 0, $w, 0)
     $g.DrawLine($script:linePen, 0, ($h - 1), $w, ($h - 1))
+    if ($script:collapsed) {
+        if ($script:logo) { $g.DrawImage($script:logo, 14, 14, 44, 48) }
+        $g.DrawString("Житнево", $script:valueFont, $script:fgBrush, 68, 28)
+        Draw-SideButtons $g $w $h
+        return
+    }
     $state = $g.Save()
     $clipW = [int]$w - 46
     $clipH = [int]$h
@@ -695,7 +732,7 @@ $form.Add_Paint({
     Draw-Row $g ($shift - $h) $next
     $g.Restore($state)
     if ($script:logo) { $g.DrawImage($script:logo, 14, 14, 44, 48) }
-    $g.DrawString("×", $script:closeFont, $script:closeBrush, ($w - 30), (($h / 2) - 12))
+    Draw-SideButtons $g $w $h
 })
 
 $poll = New-Object Windows.Forms.Timer
@@ -709,7 +746,7 @@ $partnerPoll.Start()
 $slideTimer = New-Object Windows.Forms.Timer
 $slideTimer.Interval = 30
 $slideTimer.Add_Tick({
-    if (-not $script:form) { return }
+    if (-not $script:form -or $script:collapsed) { return }
     if (-not $script:sliding) {
         if (((Get-Date) - $script:slideHold).TotalSeconds -ge 14) { $script:sliding = $true }
         return
