@@ -193,6 +193,34 @@ function Invoke-Partner([string]$method, [string]$url, $bodyObj, [string]$bearer
     }
 }
 
+function Get-ServiceCounts([string]$from, [string]$to, [string]$token) {
+    $shower = 0
+    $laundry = 0
+    $start = 0
+    $total = 1
+    while ($start -lt $total -and $start -lt 800) {
+        $page = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/order/list?limit=200&start=$start&dateFrom=$from&dateTo=$to&pointType=d" $null $token
+        $total = [int]$page.total
+        $items = $page.items
+        if ($null -eq $items) { break }
+        if ($items -is [System.Array]) {
+            for ($i = 0; $i -lt $items.Length; $i++) {
+                $kind = [string]$items[$i].orderType
+                if ($kind -eq "Душ") { $shower++ }
+                elseif ($kind -eq "Прачечная") { $laundry++ }
+            }
+            if ($items.Length -eq 0) { break }
+        } else {
+            $kind = [string]$items.orderType
+            if ($kind -eq "Душ") { $shower++ }
+            elseif ($kind -eq "Прачечная") { $laundry++ }
+            break
+        }
+        $start += 200
+    }
+    return @{ Shower = $shower; Laundry = $laundry }
+}
+
 function Update-Partner {
     if (-not $script:cfg.partnerUser -or -not $script:cfg.partnerSecret) {
         $script:partner = [pscustomobject]@{ Ready = $false; Status = "Нет входа Дорожной сети" }
@@ -211,51 +239,35 @@ function Update-Partner {
         $tomorrow = $now.AddDays(1).ToString("yyyy-MM-dd")
         $monthStart = (Get-Date -Year $now.Year -Month $now.Month -Day 1).ToString("yyyy-MM-dd")
         $nextMonth = (Get-Date -Year $now.Year -Month $now.Month -Day 1).AddMonths(1).ToString("yyyy-MM-dd")
-        $dayOrders = $null
-        $monthOrders = $null
         $reviews = $null
-        $features = $null
         try {
-            $dayOrders = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/order/list?limit=1&start=0&dateFrom=$today&dateTo=$tomorrow" $null $script:partnerToken
-            $monthOrders = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/order/list?limit=1&start=0&dateFrom=$monthStart&dateTo=$nextMonth" $null $script:partnerToken
+            $dayPark = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/order/list?limit=1&start=0&dateFrom=$today&dateTo=$tomorrow&pointType=p" $null $script:partnerToken
+            $monthPark = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/order/list?limit=1&start=0&dateFrom=$monthStart&dateTo=$nextMonth&pointType=p" $null $script:partnerToken
+            $daySvc = Get-ServiceCounts $today $tomorrow $script:partnerToken
+            $monthSvc = Get-ServiceCounts $monthStart $nextMonth $script:partnerToken
             $reviews = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/review/count" $null $script:partnerToken
-            $features = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/feature/list" $null $script:partnerToken
         } catch {
             if ($_.Exception.Message -match "^401") {
                 $script:partnerToken = ""
                 $login = Invoke-Partner "POST" "https://back.dornet.ru/api/account/auth" @{ login = [string]$script:cfg.partnerUser; password = $pass } ""
                 $script:partnerToken = [string]$login.token
-                $dayOrders = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/order/list?limit=1&start=0&dateFrom=$today&dateTo=$tomorrow" $null $script:partnerToken
-                $monthOrders = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/order/list?limit=1&start=0&dateFrom=$monthStart&dateTo=$nextMonth" $null $script:partnerToken
+                $dayPark = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/order/list?limit=1&start=0&dateFrom=$today&dateTo=$tomorrow&pointType=p" $null $script:partnerToken
+                $monthPark = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/order/list?limit=1&start=0&dateFrom=$monthStart&dateTo=$nextMonth&pointType=p" $null $script:partnerToken
+                $daySvc = Get-ServiceCounts $today $tomorrow $script:partnerToken
+                $monthSvc = Get-ServiceCounts $monthStart $nextMonth $script:partnerToken
                 $reviews = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/review/count" $null $script:partnerToken
-                $features = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/feature/list" $null $script:partnerToken
             } else { throw }
         }
-        $point = $null
-        if ($features -is [System.Array]) {
-            if ($features.Length -gt 0) { $point = $features[0] }
-        } elseif ($features.features) {
-            $point = $features
-        }
-        $shower = $false
-        $laundry = $false
-        if ($point -and $point.features) {
-            $shower = [int]$point.features.shower -eq 1
-            $laundry = [int]$point.features.laundry -eq 1
-        }
-        $services = "нет"
-        if ($shower -and $laundry) { $services = "душ и прачечная" }
-        elseif ($shower) { $services = "только душ" }
-        elseif ($laundry) { $services = "только прачечная" }
         $mark = [math]::Round([double]$reviews.average, 2).ToString("0.00")
-        $dayCount = [int]$dayOrders.total
-        $monthCount = [int]$monthOrders.total
+        $dayCount = [int]$dayPark.total
+        $monthCount = [int]$monthPark.total
         $script:partner = [pscustomobject]@{
             Ready = $true
             Today = ("{0} {1}" -f $dayCount, (Noun $dayCount "машина" "машины" "машин"))
             Month = ("{0} {1}" -f $monthCount, (Noun $monthCount "машина" "машины" "машин"))
+            Shower = ("{0} сегодня · {1}" -f [int]$daySvc.Shower, [int]$monthSvc.Shower)
+            Laundry = ("{0} сегодня · {1}" -f [int]$daySvc.Laundry, [int]$monthSvc.Laundry)
             Reviews = ("{0} · {1}" -f $mark, [int]$reviews.count)
-            Services = $services
             Status = ""
         }
         $script:partnerAt = Get-Date
@@ -527,7 +539,7 @@ $form.Add_Paint({
     $partner = $script:partner
     $ourCount = 0
     if ($view -and $view.Ready) { $ourCount = $(if ($view.DayMoney) { 4 } else { 2 }) }
-    $partnerCount = 4
+    $partnerCount = 5
     $gap = 8
     $left = 70
     $mid = 58
@@ -574,9 +586,11 @@ $form.Add_Paint({
         $x += $step
         Draw-Card $g $x 8 $cw 62 "Стоянка за месяц" ([string]$partner.Month) $script:partnerBrush $script:partnerPen
         $x += $step
-        Draw-Card $g $x 8 $cw 62 "Отзывы" ([string]$partner.Reviews) $script:partnerBrush $script:partnerPen
+        Draw-Card $g $x 8 $cw 62 "Душ" ([string]$partner.Shower) $script:partnerBrush $script:partnerPen
         $x += $step
-        Draw-Card $g $x 8 $cw 62 "Душ и прачечная" ([string]$partner.Services) $script:partnerBrush $script:partnerPen
+        Draw-Card $g $x 8 $cw 62 "Прачечная" ([string]$partner.Laundry) $script:partnerBrush $script:partnerPen
+        $x += $step
+        Draw-Card $g $x 8 $cw 62 "Отзывы" ([string]$partner.Reviews) $script:partnerBrush $script:partnerPen
     }
     $g.DrawString("×", $script:closeFont, $script:closeBrush, ($w - 26), 26)
 })
