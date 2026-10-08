@@ -126,14 +126,15 @@ function Update-Stats {
         }
         $script:offline = $false
         $script:status = ""
-        Build-Pieces
+        Build-View
     } catch {
         $script:offline = $true
         $script:status = [string]$_.Exception.Message
         if (-not $script:status) { $script:status = "Нет связи с сервером" }
-        Build-Pieces
+        Build-View
     } finally {
         $script:busy = $false
+        if ($script:form) { $script:form.Invalidate() }
     }
 }
 
@@ -148,84 +149,42 @@ function Noun([int]$n, [string]$one, [string]$few, [string]$many) {
 function Money([int]$n) {
     return ("{0:N0}" -f $n) + " ₽"
 }
-function Add-Piece([System.Collections.Generic.List[object]]$list, [string]$text, [Drawing.Color]$color, [Drawing.Font]$font) {
-    $list.Add([pscustomobject]@{ Text = $text; Color = $color; Font = $font }) | Out-Null
-}
-function Build-Pieces {
-    $fg = [Drawing.Color]::FromArgb(241, 242, 244)
-    $muted = [Drawing.Color]::FromArgb(154, 160, 170)
-    $ok = [Drawing.Color]::FromArgb(125, 186, 138)
-    $bad = [Drawing.Color]::FromArgb(226, 59, 59)
-    $gold = [Drawing.Color]::FromArgb(224, 161, 90)
-    $main = New-Object Drawing.Font "Segoe UI", 18, ([Drawing.FontStyle]::Bold), ([Drawing.GraphicsUnit]::Pixel)
-    $soft = New-Object Drawing.Font "Segoe UI", 15, ([Drawing.FontStyle]::Regular), ([Drawing.GraphicsUnit]::Pixel)
-    $list = New-Object System.Collections.Generic.List[object]
-    $gap = "      "
-    if ($script:offline -and -not $script:stats) {
-        Add-Piece $list "Житнево Парк" $fg $main
-        Add-Piece $list $gap $muted $soft
-        Add-Piece $list $(if ($script:status) { $script:status } else { "Нет связи с сервером" }) $bad $main
-    } else {
-        $s = $script:stats
-        $months = @("январь","февраль","март","апрель","май","июнь","июль","август","сентябрь","октябрь","ноябрь","декабрь")
-        $monthName = $months[[Math]::Max(0, [int]$s.monthNumber - 1)]
-        Add-Piece $list "Житнево Парк" $fg $main
-        Add-Piece $list $gap $muted $soft
-        Add-Piece $list "сегодня" $muted $soft
-        Add-Piece $list ("  {0} {1}" -f [int]$s.day, (Noun $s.day "машина" "машины" "машин")) $fg $main
-        if ($null -ne $s.dayMoney) {
-            Add-Piece $list ("   " + (Money $s.dayMoney)) $ok $main
+function Build-View {
+    $months = @("Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь")
+    if (-not $script:stats) {
+        $script:view = [pscustomobject]@{
+            Ready = $false
+            Status = $(if ($script:status) { [string]$script:status } else { "Нет связи с сервером" })
         }
-        Add-Piece $list $gap $muted $soft
-        $unauthColor = $(if ([int]$s.dayUnauthorized -gt 0) { $bad } else { $muted })
-        Add-Piece $list "несогласованных" $muted $soft
-        Add-Piece $list ("  " + [int]$s.dayUnauthorized) $unauthColor $main
-        Add-Piece $list $gap $muted $soft
-        Add-Piece $list $monthName $muted $soft
-        Add-Piece $list ("  {0} {1}" -f [int]$s.month, (Noun $s.month "машина" "машины" "машин")) $fg $main
-        if ($null -ne $s.monthMoney) {
-            Add-Piece $list ("   " + (Money $s.monthMoney)) $ok $main
-        }
-        if ($script:offline) {
-            Add-Piece $list $gap $muted $soft
-            Add-Piece $list "нет связи, показаны последние цифры" $gold $soft
-        }
+        return
     }
-    $copy = New-Object object[] $list.Count
-    for ($i = 0; $i -lt $list.Count; $i++) { $copy[$i] = $list[$i] }
-    $script:pieces = $copy
-    Update-Strip
+    $s = $script:stats
+    $month = $months[[Math]::Max(0, [int]$s.monthNumber - 1)]
+    $script:view = [pscustomobject]@{
+        Ready = $true
+        Day = ("{0} {1}" -f [int]$s.day, (Noun $s.day "машина" "машины" "машин"))
+        DayMoney = $(if ($null -ne $s.dayMoney) { Money ([int]$s.dayMoney) } else { "" })
+        Month = $month
+        MonthCount = ("{0} {1}" -f [int]$s.month, (Noun $s.month "машина" "машины" "машин"))
+        MonthMoney = $(if ($null -ne $s.monthMoney) { Money ([int]$s.monthMoney) } else { "" })
+        Offline = [bool]$script:offline
+        Status = [string]$script:status
+    }
 }
 
-function Update-Strip {
-    if ($script:strip) { $script:strip.Dispose(); $script:strip = $null }
-    $items = $script:pieces
-    if ($null -eq $items -or $items.Count -eq 0) { $script:stripWidth = 1; return }
-    $probe = New-Object Drawing.Bitmap 8, 8
-    $pg = [Drawing.Graphics]::FromImage($probe)
-    $pg.TextRenderingHint = "AntiAliasGridFit"
-    $width = 24.0
-    for ($i = 0; $i -lt $items.Count; $i++) {
-        $p = $items[$i]
-        $width += $pg.MeasureString([string]$p.Text, $p.Font).Width
-    }
-    $pg.Dispose(); $probe.Dispose()
-    $bmpW = [int][Math]::Ceiling($width) + 120
-    $bmp = New-Object Drawing.Bitmap $bmpW, 40
-    $g = [Drawing.Graphics]::FromImage($bmp)
-    $g.TextRenderingHint = "AntiAliasGridFit"
-    $g.Clear([Drawing.Color]::Transparent)
-    $x = 0.0
-    for ($i = 0; $i -lt $items.Count; $i++) {
-        $p = $items[$i]
-        $brush = New-Object Drawing.SolidBrush $p.Color
-        $g.DrawString([string]$p.Text, $p.Font, $brush, $x, 6)
-        $x += $g.MeasureString([string]$p.Text, $p.Font).Width
-        $brush.Dispose()
-    }
-    $g.Dispose()
-    $script:strip = $bmp
-    $script:stripWidth = $bmp.Width
+function Draw-Card($g, [int]$x, [int]$y, [int]$w, [int]$h, [string]$label, [string]$value, $valueBrush) {
+    $path = New-Object Drawing.Drawing2D.GraphicsPath
+    $d = 16
+    $path.AddArc($x, $y, $d, $d, 180, 90)
+    $path.AddArc(($x + $w - $d), $y, $d, $d, 270, 90)
+    $path.AddArc(($x + $w - $d), ($y + $h - $d), $d, $d, 0, 90)
+    $path.AddArc($x, ($y + $h - $d), $d, $d, 90, 90)
+    $path.CloseFigure()
+    $g.FillPath($script:cardFill, $path)
+    $g.DrawPath($script:cardPen, $path)
+    $path.Dispose()
+    $g.DrawString($label, $script:labelFont, $script:mutedBrush, ($x + 14), ($y + 8))
+    $g.DrawString($value, $script:valueFont, $valueBrush, ($x + 14), ($y + 28))
 }
 
 function Set-Autostart([bool]$on) {
@@ -337,7 +296,7 @@ $script:role = [string]$script:cfg.role
 try { $script:logo = Ensure-Logo } catch { $script:logo = $null }
 
 $area = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-$barH = 58
+$barH = 78
 $form = New-Object Windows.Forms.Form
 $form.FormBorderStyle = "None"
 $form.ShowInTaskbar = $true
@@ -348,10 +307,19 @@ $form.BackColor = [Drawing.Color]::FromArgb(20, 22, 26)
 $form.Text = "Житнево Парк"
 $form.GetType().GetProperty("DoubleBuffered", [Reflection.BindingFlags]"Instance,NonPublic").SetValue($form, $true, $null)
 
-$script:cardBrush = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(20, 22, 26))
+$script:cardBrush = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(11, 12, 14))
+$script:cardFill = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(20, 22, 26))
+$script:cardPen = New-Object Drawing.Pen ([Drawing.Color]::FromArgb(70, 241, 242, 244)), 1
 $script:linePen = New-Object Drawing.Pen ([Drawing.Color]::FromArgb(36, 241, 242, 244)), 1
+$script:mutedBrush = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(154, 160, 170))
+$script:fgBrush = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(241, 242, 244))
+$script:okBrush = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(125, 186, 138))
+$script:badBrush = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(226, 59, 59))
+$script:labelFont = New-Object Drawing.Font "Segoe UI", 13, ([Drawing.FontStyle]::Regular), ([Drawing.GraphicsUnit]::Pixel)
+$script:valueFont = New-Object Drawing.Font "Segoe UI", 22, ([Drawing.FontStyle]::Bold), ([Drawing.GraphicsUnit]::Pixel)
 $script:closeBrush = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(154, 160, 170))
 $script:closeFont = New-Object Drawing.Font "Segoe UI", 16, ([Drawing.FontStyle]::Regular), ([Drawing.GraphicsUnit]::Pixel)
+$script:form = $form
 
 $menu = New-Object Windows.Forms.ContextMenuStrip
 $miRefresh = $menu.Items.Add("Обновить")
@@ -387,54 +355,47 @@ $form.Add_Paint({
     $h = [single]$form.ClientSize.Height
     $g.FillRectangle($script:cardBrush, 0, 0, $w, $h)
     $g.DrawLine($script:linePen, 0, 0, $w, 0)
-    $g.DrawLine($script:linePen, 72, 12, 72, ($h - 12))
-    if ($script:logo) { $g.DrawImage($script:logo, 12, 6, 48, 46) }
-
-    $clip = New-Object Drawing.Rectangle 84, 0, ([int]$w - 124), ([int]$h)
-    $g.SetClip($clip)
-    if ($script:strip -and $script:stripWidth -gt 1) {
-        $offset = [single]($script:scroll % $script:stripWidth)
-        $left = New-Object Drawing.RectangleF
-        $left.X = [single](84 - $offset)
-        $left.Y = 8
-        $left.Width = $script:strip.Width
-        $left.Height = $script:strip.Height
-        $g.DrawImage($script:strip, $left)
-        $right = New-Object Drawing.RectangleF
-        $right.X = [single](84 - $offset + $script:stripWidth)
-        $right.Y = 8
-        $right.Width = $script:strip.Width
-        $right.Height = $script:strip.Height
-        $g.DrawImage($script:strip, $right)
+    $g.DrawLine($script:linePen, 0, ($h - 1), $w, ($h - 1))
+    if ($script:logo) { $g.DrawImage($script:logo, 14, 14, 44, 48) }
+    $view = $script:view
+    if (-not $view -or -not $view.Ready) {
+        $text = "Подключение…"
+        if ($view -and $view.Status) { $text = [string]$view.Status }
+        $g.DrawString($text, $script:valueFont, $script:badBrush, 78, 24)
+    } else {
+        $count = 2
+        if ($view.DayMoney) { $count = 4 }
+        $gap = 10
+        $left = 74
+        $rightPad = 42
+        $avail = [int]$w - $left - $rightPad - ($gap * ($count - 1))
+        $cw = [int]($avail / $count)
+        $step = $cw + $gap
+        $dayLabel = "Сегодня"
+        if ($view.Offline) { $dayLabel = "Сегодня, нет связи" }
+        Draw-Card $g $left 8 $cw 62 $dayLabel ([string]$view.Day) $script:fgBrush
+        if ($view.DayMoney) {
+            Draw-Card $g ($left + $step) 8 $cw 62 "Сумма за сегодня" ([string]$view.DayMoney) $script:okBrush
+            Draw-Card $g ($left + $step + $step) 8 $cw 62 ([string]$view.Month) ([string]$view.MonthCount) $script:fgBrush
+            Draw-Card $g ($left + $step + $step + $step) 8 $cw 62 ("Сумма за " + $view.Month.ToLower()) ([string]$view.MonthMoney) $script:okBrush
+        } else {
+            Draw-Card $g ($left + $step) 8 $cw 62 ([string]$view.Month) ([string]$view.MonthCount) $script:fgBrush
+        }
     }
-    $g.ResetClip()
-    $g.DrawString("×", $script:closeFont, $script:closeBrush, ($w - 26), 16)
+    $g.DrawString("×", $script:closeFont, $script:closeBrush, ($w - 26), 26)
 })
 $form.Add_MouseClick({
     if ($_.Button -eq "Left" -and $_.X -gt ($form.ClientSize.Width - 36) -and $_.Y -lt 36) { $form.Close() }
 })
 
-$timer = New-Object Windows.Forms.Timer
-$timer.Interval = 16
-$timer.Add_Tick({
-    $now = $script:clock.ElapsedMilliseconds
-    $dt = [Math]::Min(0.05, (($now - $script:lastTick) / 1000.0))
-    $script:lastTick = $now
-    if ($script:stripWidth -gt 1) {
-        $script:scroll = ($script:scroll + (46 * $dt)) % $script:stripWidth
-    }
-    $form.Invalidate()
-})
-$timer.Start()
-
 $poll = New-Object Windows.Forms.Timer
 $poll.Interval = 45000
 $poll.Add_Tick({ Update-Stats })
 $poll.Start()
-
 $form.Add_Shown({ Update-Stats })
 [void]$form.ShowDialog()
-$timer.Stop(); $poll.Stop()
+$poll.Stop()
 if ($script:logo) { $script:logo.Dispose() }
-if ($script:strip) { $script:strip.Dispose() }
-$script:cardBrush.Dispose(); $script:linePen.Dispose(); $script:closeBrush.Dispose(); $script:closeFont.Dispose()
+$script:cardBrush.Dispose(); $script:cardFill.Dispose(); $script:cardPen.Dispose()
+$script:linePen.Dispose(); $script:mutedBrush.Dispose(); $script:fgBrush.Dispose(); $script:okBrush.Dispose(); $script:badBrush.Dispose()
+$script:labelFont.Dispose(); $script:valueFont.Dispose(); $script:closeBrush.Dispose(); $script:closeFont.Dispose()
