@@ -115,14 +115,15 @@ fun DetailScreen(
                         Text("Водитель", color = Subtle, fontSize = 12.sp)
                         Text(crew.driver, color = Fg, fontSize = 18.sp, fontWeight = FontWeight.Medium)
                     }
-                    if (crew.phone.isNotBlank()) {
-                        if (crew.driver.isNotBlank()) Spacer(Modifier.height(10.dp))
+                    val phones = crew.phone.split(Regex("[,;\\n]+")).map { it.trim() }.filter { it.isNotBlank() }
+                    phones.forEach { phone ->
+                        if (crew.driver.isNotBlank() || phones.first() != phone) Spacer(Modifier.height(10.dp))
                         Text("Телефон", color = Subtle, fontSize = 12.sp)
-                        Text(crew.phone, color = Fg, fontSize = 18.sp, fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.height(12.dp))
+                        Text(phone, color = Fg, fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.height(8.dp))
                         Button(
                             onClick = {
-                                val dial = crew.phone.filter { it.isDigit() || it == '+' }
+                                val dial = phone.filter { it.isDigit() || it == '+' }
                                 if (dial.isNotBlank()) {
                                     context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$dial")))
                                 }
