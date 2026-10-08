@@ -415,7 +415,11 @@ function Draw-Card($g, [int]$x, [int]$y, [int]$w, [int]$h, [string]$label, [stri
     $g.DrawPath($pen, $path)
     $path.Dispose()
     $state = $g.Save()
-    $g.SetClip((New-Object Drawing.Rectangle ($x + 10), ($y + 2), ($w - 16), ($h - 4)))
+    $clipX = [int]($x + 10)
+    $clipY = [int]($y + 2)
+    $clipW = [int]($w - 16)
+    $clipH = [int]($h - 4)
+    $g.SetClip((New-Object Drawing.Rectangle -ArgumentList $clipX, $clipY, $clipW, $clipH))
     $g.DrawString($label, $script:labelFont, $script:mutedBrush, ($x + 12), ($y + 8))
     $g.DrawString($value, $script:valueFont, $valueBrush, ($x + 12), ($y + 28))
     $g.Restore($state)
@@ -679,7 +683,9 @@ $form.Add_Paint({
     $g.DrawLine($script:linePen, 0, 0, $w, 0)
     $g.DrawLine($script:linePen, 0, ($h - 1), $w, ($h - 1))
     $state = $g.Save()
-    $g.SetClip((New-Object Drawing.Rectangle 0, 0, ([int]$w - 46), [int]$h))
+    $clipW = [int]$w - 46
+    $clipH = [int]$h
+    $g.SetClip((New-Object Drawing.Rectangle -ArgumentList 0, 0, $clipW, $clipH))
     $shift = [single]$script:slideY
     $current = [int]$script:slide
     $next = 1 - $current
