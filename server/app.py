@@ -417,6 +417,7 @@ def journal(
         day_start = int(start.timestamp() * 1000)
         day_end = int((start + timedelta(days=1)).timestamp() * 1000)
     cap = 1000 if day_start is not None else page
+    hide_author = user["role"] == "manager"
     labels = user_labels()
     by_plate, tractors = fleet_directory()
     with db() as conn:
@@ -425,17 +426,20 @@ def journal(
         ).fetchall()
     seen = []
     known = set()
-    for row in rows:
-        login = (row["author"] or "").strip()
-        if login and login not in known:
-            known.add(login)
-            seen.append({"login": login, "name": labels.get(login, login)})
-    seen.sort(key=lambda item: item["name"])
+    if not hide_author:
+        for row in rows:
+            login = (row["author"] or "").strip()
+            if login and login not in known:
+                known.add(login)
+                seen.append({"login": login, "name": labels.get(login, login)})
+        seen.sort(key=lambda item: item["name"])
     plates = []
     for row in rows:
         item = plate_json(row)
         login = (row["author"] or "").strip()
-        item["authorName"] = labels.get(login, login)
+        item["authorName"] = "" if hide_author else labels.get(login, login)
+        if hide_author:
+            item["author"] = ""
         crew = crew_for(row["number"], by_plate, tractors)
         item["driver"] = crew["driver"] if crew else ""
         item["trailer"] = crew["trailer"] if crew else ""
@@ -443,22 +447,20 @@ def journal(
             continue
         if unauthorized and not row["unauthorized"]:
             continue
-        if wanted and (row["author"] or "").strip() != wanted:
+        if wanted and not hide_author and (row["author"] or "").strip() != wanted:
             continue
         if day_start is not None and not (day_start <= row["ts"] < day_end):
             continue
         if text:
-            haystack = " ".join(
-                (
-                    row["number"] or "",
-                    row["note"] or "",
-                    row["author"] or "",
-                    item["authorName"],
-                    item["driver"],
-                    item["trailer"],
-                )
-            ).casefold()
-            if text not in haystack:
+            parts = [
+                row["number"] or "",
+                row["note"] or "",
+                item["driver"],
+                item["trailer"],
+            ]
+            if not hide_author:
+                parts.extend((row["author"] or "", item["authorName"]))
+            if text not in " ".join(parts).casefold():
                 continue
         plates.append(item)
         if len(plates) >= cap:

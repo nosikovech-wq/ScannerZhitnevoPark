@@ -140,7 +140,11 @@
     .side { display: flex; flex-direction: column; gap: 8px; min-width: 156px; }
     .side .btn { width: 100%; height: 38px; }
     body[data-role="manager"] .stat.money,
-    body[data-role="manager"] [data-edit] { display: none !important; }
+    body[data-role="manager"] [data-edit],
+    body[data-role="manager"] #author { display: none !important; }
+    body[data-role="manager"] #journal .tools {
+      grid-template-columns: 168px auto auto auto auto auto;
+    }
     .tools {
       display: flex;
       gap: 8px;
@@ -398,6 +402,9 @@ function enter() {
   document.getElementById("tabUsers").classList.toggle("hidden", role !== "admin");
   document.getElementById("tabData").classList.toggle("hidden", role !== "admin");
   document.getElementById("tabFleet").classList.toggle("hidden", role === "manager" || role === "screen");
+  document.getElementById("search").placeholder = role === "manager"
+    ? "Номер, ФИО или заметка"
+    : "Номер, ФИО, заметка или сотрудник";
   document.querySelector('.tabs button[data-tab="journal"]').classList.toggle("hidden", role === "screen");
   show(role === "screen" ? "stats" : "journal");
 }
@@ -640,7 +647,7 @@ async function loadJournal() {
       <div>
         <div class="plate">${escapeHtml(plate.number)}</div>
         ${known ? `<div>${escapeHtml(plate.driver)}</div>` : `<div class="miss">НЕТ В СПРАВОЧНИКЕ</div>`}
-        <div class="meta">${when}${plate.authorName ? " · " + escapeHtml(plate.authorName) : ""}</div>
+        <div class="meta">${when}${role === "manager" || !plate.authorName ? "" : " · " + escapeHtml(plate.authorName)}</div>
         ${plate.unauthorized ? `<div class="bad">НЕСОГЛАСОВАННЫЙ ВЫЕЗД</div>` : ""}
         ${plate.note ? `<div class="meta">${escapeHtml(plate.note)}</div>` : ""}
       </div>
