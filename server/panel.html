@@ -176,20 +176,12 @@
     table { width: 100%; border-collapse: collapse; }
     #fleet table { table-layout: fixed; }
     #fleet col.plate { width: 168px; }
-    #fleet col.phone { width: 168px; }
+    #fleet col.phone { width: 188px; }
     #fleet col.act { width: 118px; }
-    #fleet input, #fleet textarea { width: 100%; min-width: 0; }
-    #fleet textarea {
-      display: block;
-      height: 62px;
-      resize: none;
-      background: var(--surface2);
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 8px 10px;
-      color: var(--fg);
-      line-height: 1.35;
-    }
+    #fleet input { width: 100%; min-width: 0; }
+    #fleet td.phones input { display: block; height: 36px; padding: 6px 8px; }
+    #fleet td.phones input + input,
+    #fleet td.phones div + div { margin-top: 6px; }
     th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; color: var(--fg); }
     th { color: var(--muted); font-weight: 600; font-size: 13px; }
     td .btn { height: 36px; margin: 0 6px 0 0; }
@@ -959,18 +951,23 @@ async function loadFleet() {
           <td><input data-f="tractor" data-i="${index}" value="${escapeAttr(row.tractor)}"></td>
           <td><input data-f="trailer" data-i="${index}" value="${escapeAttr(row.trailer)}"></td>
           <td><input data-f="driver" data-i="${index}" value="${escapeAttr(row.driver)}"></td>
-          <td><textarea class="phones" data-f="phone" data-i="${index}">${escapeHtml(phoneLines(row.phone).join("\n"))}</textarea></td>
+          <td class="phones"><input data-f="phone" data-i="${index}" data-n="0" value="${escapeAttr(phoneLines(row.phone)[0] || "")}" inputmode="tel" autocomplete="off"><input data-f="phone" data-i="${index}" data-n="1" value="${escapeAttr(phoneLines(row.phone)[1] || "")}" inputmode="tel" autocomplete="off"></td>
           <td><button class="btn danger" data-drop="${index}" type="button">Удалить</button></td>
         </tr>`
-      : `<tr><td>${escapeHtml(row.tractor)}</td><td>${escapeHtml(row.trailer)}</td><td>${escapeHtml(row.driver)}</td><td>${phoneLines(row.phone).map(phone => `<div>${escapeHtml(phone)}</div>`).join("")}</td></tr>`
+      : `<tr><td>${escapeHtml(row.tractor)}</td><td>${escapeHtml(row.trailer)}</td><td>${escapeHtml(row.driver)}</td><td class="phones">${phoneLines(row.phone).map(phone => `<div>${escapeHtml(phone)}</div>`).join("")}</td></tr>`
     ).join("") || `<tr><td colspan="${editable ? 5 : 4}">Ничего не найдено</td></tr>`;
     if (!editable) return;
-    document.querySelectorAll("#fleetBody input, #fleetBody textarea").forEach(input => {
+    document.querySelectorAll("#fleetBody input").forEach(input => {
       input.oninput = () => {
-        const value = input.dataset.f === "phone"
-          ? phoneLines(input.value).join(", ")
-          : input.value;
-        rows[input.dataset.i][input.dataset.f] = value;
+        if (input.dataset.f === "phone") {
+          const index = input.dataset.i;
+          rows[index].phone = [...document.querySelectorAll(`#fleetBody [data-f="phone"][data-i="${index}"]`)]
+            .map(field => field.value.trim())
+            .filter(Boolean)
+            .join(", ");
+        } else {
+          rows[input.dataset.i][input.dataset.f] = input.value;
+        }
       };
     });
     document.querySelectorAll("[data-drop]").forEach(btn => btn.onclick = () => {

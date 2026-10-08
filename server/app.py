@@ -184,7 +184,11 @@ def list_backups(user: sqlite3.Row = Depends(admin_only)):
 
 @app.delete("/api/backups/{name}")
 def delete_backup(name: str, user: sqlite3.Row = Depends(admin_only)):
-    backup_file(name).unlink()
+    path = backup_file(name)
+    try:
+        path.unlink()
+    except OSError:
+        raise HTTPException(500, "Не удалось удалить копию. Нет прав на файл.")
     return {"ok": True}
 
 
