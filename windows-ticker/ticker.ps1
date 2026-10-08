@@ -191,19 +191,24 @@ function Build-Pieces {
             Add-Piece $list "нет связи, показаны последние цифры" $gold $soft
         }
     }
-    $script:pieces = $list
+    $copy = New-Object object[] $list.Count
+    for ($i = 0; $i -lt $list.Count; $i++) { $copy[$i] = $list[$i] }
+    $script:pieces = $copy
     Update-Strip
 }
 
 function Update-Strip {
     if ($script:strip) { $script:strip.Dispose(); $script:strip = $null }
-    $items = @($script:pieces)
-    if ($items.Count -eq 0) { $script:stripWidth = 1; return }
+    $items = $script:pieces
+    if ($null -eq $items -or $items.Count -eq 0) { $script:stripWidth = 1; return }
     $probe = New-Object Drawing.Bitmap 8, 8
     $pg = [Drawing.Graphics]::FromImage($probe)
     $pg.TextRenderingHint = "AntiAliasGridFit"
     $width = 24.0
-    foreach ($p in $items) { $width += $pg.MeasureString([string]$p.Text, $p.Font).Width }
+    for ($i = 0; $i -lt $items.Count; $i++) {
+        $p = $items[$i]
+        $width += $pg.MeasureString([string]$p.Text, $p.Font).Width
+    }
     $pg.Dispose(); $probe.Dispose()
     $bmpW = [int][Math]::Ceiling($width) + 120
     $bmp = New-Object Drawing.Bitmap $bmpW, 40
@@ -211,7 +216,8 @@ function Update-Strip {
     $g.TextRenderingHint = "AntiAliasGridFit"
     $g.Clear([Drawing.Color]::Transparent)
     $x = 0.0
-    foreach ($p in $items) {
+    for ($i = 0; $i -lt $items.Count; $i++) {
+        $p = $items[$i]
         $brush = New-Object Drawing.SolidBrush $p.Color
         $g.DrawString([string]$p.Text, $p.Font, $brush, $x, 6)
         $x += $g.MeasureString([string]$p.Text, $p.Font).Width
