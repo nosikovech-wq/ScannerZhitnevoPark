@@ -48,6 +48,10 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             hikHttpPort = next.hikHttpPort.coerceIn(1, 65535),
             hikRtspPort = next.hikRtspPort.coerceIn(1, 65535),
             dim = next.dim.coerceIn(0.12f, 0.72f),
+            backdrop = when (next.backdrop) {
+                "truck", "nature" -> next.backdrop
+                else -> "camera"
+            },
         )
         Prefs.save(getApplication(), clean)
         settings.value = clean

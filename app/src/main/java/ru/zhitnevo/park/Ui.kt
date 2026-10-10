@@ -12,6 +12,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,7 +52,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -116,7 +123,29 @@ fun ParkApp(vm: FeedViewModel = viewModel()) {
                 delay(1000)
             }
         }
-        Box(Modifier.fillMaxSize().background(Ink)) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Ink)
+                .onPreviewKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    when (event.key) {
+                        Key.Menu, Key.Settings, Key.Info -> {
+                            open = true
+                            true
+                        }
+                        Key.Back, Key.Escape -> {
+                            if (open) {
+                                open = false
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        else -> false
+                    }
+                },
+        ) {
             CameraLayer(settings, frame, camStatus, vm::reportCamera)
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = settings.dim)))
             Dashboard(
@@ -152,20 +181,44 @@ private fun CameraLayer(
     camStatus: String,
     report: (String) -> Unit,
 ) {
-    if (settings.hikHost.isNotBlank() && settings.hikLive) {
-        RtspBackdrop(Hik.rtspUrl(settings), report)
-        return
+    when (settings.backdrop) {
+        "truck" -> AssetBackdrop("asset:///video/truck.webm")
+        "nature" -> AssetBackdrop("asset:///video/nature.webm")
+        else -> {
+            if (settings.hikHost.isNotBlank() && settings.hikLive) {
+                RtspBackdrop(Hik.rtspUrl(settings), report)
+            } else {
+                val bmp = frame
+                if (bmp != null && camStatus != "камера не задана") {
+                    val image = remember(bmp) { bmp.asImageBitmap() }
+                    Image(
+                        bitmap = image,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                }
+            }
+        }
     }
-    val bmp = frame
-    if (bmp != null && camStatus != "камера не задана") {
-        val image = remember(bmp) { bmp.asImageBitmap() }
-        Image(
-            bitmap = image,
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop,
-        )
+}
+
+@Composable
+private fun AssetBackdrop(uri: String) {
+    val context = LocalContext.current
+    val player = remember(uri) {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(uri))
+            repeatMode = Player.REPEAT_MODE_ONE
+            volume = 0f
+            playWhenReady = true
+            prepare()
+        }
     }
+    DisposableEffect(player) {
+        onDispose { player.release() }
+    }
+    VideoSurface(player)
 }
 
 @Composable
@@ -199,6 +252,11 @@ private fun RtspBackdrop(url: String, report: (String) -> Unit) {
             player.release()
         }
     }
+    VideoSurface(player)
+}
+
+@Composable
+private fun VideoSurface(player: ExoPlayer) {
     AndroidView(
         modifier = Modifier.fillMaxSize(),
         factory = { ctx ->
@@ -208,6 +266,9 @@ private fun RtspBackdrop(url: String, report: (String) -> Unit) {
                     ViewGroup.LayoutParams.MATCH_PARENT,
                 )
                 useController = false
+                isFocusable = false
+                isFocusableInTouchMode = false
+                descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                 setShutterBackgroundColor(android.graphics.Color.BLACK)
             }
@@ -231,6 +292,7 @@ private fun Dashboard(
     val clock = clockText(now)
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
+        delay(300)
         runCatching { focus.requestFocus() }
     }
     val demo = parkState == "demo" || partnerState == "demo"
@@ -276,14 +338,23 @@ private fun Dashboard(
         if (!park.ready && park.status.isNotBlank() && parkState != "demo") {
             Text(park.status, color = Muted, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp))
         }
-        Band(R.drawable.logo_tt, "Транспортные технологии", Modifier.padding(top = 12.dp).weight(1f)) {
+        Band(R.drawable.logo_tt, "Транспортные технологии", Modifier.padding(top = 8.dp).weight(1f)) {
             MetricGrid(parkMetrics(park), columns = 4, partner = false, Modifier.fillMaxSize())
         }
         if (!partner.ready && partner.status.isNotBlank() && partnerState != "demo") {
             Text(partner.status, color = Partner, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
         }
-        Band(R.drawable.logo_dornet, "Дорожная сеть", Modifier.padding(top = 10.dp).weight(1.35f)) {
-            MetricGrid(partnerMetrics(partner), columns = 4, partner = true, Modifier.fillMaxSize())
+        Row(Modifier.padding(top = 8.dp).weight(2f), verticalAlignment = Alignment.CenterVertically) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(84.dp)) {
+                Image(
+                    painter = painterResource(R.drawable.logo_dornet),
+                    contentDescription = "Дорожная сеть",
+                    modifier = Modifier.size(64.dp),
+                    contentScale = ContentScale.Fit,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            MetricGrid(partnerMetrics(partner), columns = 4, partner = true, Modifier.weight(1f).fillMaxHeight())
         }
         BplaBar(bpla)
     }
@@ -329,7 +400,7 @@ private fun MetricCard(metric: Metric, partner: Boolean, modifier: Modifier) {
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(metric.label, color = Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(metric.label, color = Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(
             metric.value,
             color = if (partner) Partner else Fg,
@@ -337,7 +408,7 @@ private fun MetricCard(metric: Metric, partner: Boolean, modifier: Modifier) {
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 2.dp),
+            modifier = Modifier.padding(top = 4.dp),
         )
         if (!metric.detail.isNullOrBlank()) {
             Text(
@@ -375,9 +446,9 @@ private fun BplaBar(air: AirUi) {
     val whenText = mentionClock(air.mentionedAt)
     Row(
         Modifier
-            .padding(top = 10.dp)
+            .padding(top = 6.dp)
             .fillMaxWidth()
-            .height(76.dp)
+            .height(48.dp)
             .clip(shape)
             .border(2.dp, color, shape)
             .background(color.copy(alpha = 0.14f))
@@ -385,8 +456,8 @@ private fun BplaBar(air: AirUi) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
-        FpvGlyph(color, Modifier.size(44.dp))
-        Spacer(Modifier.width(16.dp))
+        FpvGlyph(color, Modifier.size(26.dp))
+        Spacer(Modifier.width(12.dp))
         Text(
             when {
                 !air.known -> "…"
@@ -394,13 +465,13 @@ private fun BplaBar(air: AirUi) {
                 else -> "Опасности нет"
             },
             color = if (air.danger) Color(0xFFFFD0D0) else Fg,
-            fontSize = 30.sp,
+            fontSize = 20.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
         )
         if (whenText.isNotEmpty()) {
-            Spacer(Modifier.width(20.dp))
-            Text(whenText, color = Fg, fontSize = 26.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+            Spacer(Modifier.width(16.dp))
+            Text(whenText, color = Fg, fontSize = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1)
         }
     }
 }
@@ -565,6 +636,12 @@ private fun SettingsScreen(initial: AppSettings, onClose: () -> Unit, onSave: (A
     var hikLive by remember { mutableStateOf(initial.hikLive) }
     var hikSub by remember { mutableStateOf(initial.hikSubstream) }
     var dim by remember { mutableStateOf(initial.dim) }
+    var backdrop by remember { mutableStateOf(initial.backdrop) }
+    val firstFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(200)
+        runCatching { firstFocus.requestFocus() }
+    }
 
     Column(
         Modifier
@@ -577,27 +654,41 @@ private fun SettingsScreen(initial: AppSettings, onClose: () -> Unit, onSave: (A
         Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Панель", color = Fg, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                Field("Адрес панели", server, { server = it })
+                Field("Адрес панели", server, { server = it }, modifier = Modifier.focusRequester(firstFocus))
                 Field("Логин панели", username, { username = it })
-                Field("Пароль панели", password, { password = it }, secret = true)
+                SecretField("Пароль панели", password) { password = it }
                 Spacer(Modifier.height(8.dp))
                 Text("Дорожная сеть", color = Partner, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                 Field("Логин", partnerUser, { partnerUser = it })
-                Field("Пароль", partnerPassword, { partnerPassword = it }, secret = true)
+                SecretField("Пароль", partnerPassword) { partnerPassword = it }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Камера Hikvision", color = Fg, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                Field("IP-адрес", hikHost, { hikHost = it })
+                Text("Фон", color = Fg, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Box(Modifier.weight(1f)) { Field("HTTP-порт", hikHttp, { hikHttp = it }, KeyboardType.Number) }
-                    Box(Modifier.weight(1f)) { Field("RTSP-порт", hikRtsp, { hikRtsp = it }, KeyboardType.Number) }
-                    Box(Modifier.weight(1f)) { Field("Канал", hikChannel, { hikChannel = it }, KeyboardType.Number) }
+                    BackdropChoice("Камера", backdrop == "camera") { backdrop = "camera" }
+                    BackdropChoice("Грузовик", backdrop == "truck") { backdrop = "truck" }
+                    BackdropChoice("Природа", backdrop == "nature") { backdrop = "nature" }
                 }
-                Field("Логин камеры", hikUser, { hikUser = it })
-                Field("Пароль камеры", hikPassword, { hikPassword = it }, secret = true)
-                Toggle("HTTPS (обычно порт 443)", hikHttps) { hikHttps = it }
-                Toggle("Живой поток RTSP вместо снимка", hikLive) { hikLive = it }
-                Toggle("Субпоток (канал x02, обычно H.264)", hikSub) { hikSub = it }
+                if (backdrop == "camera") {
+                    Text("Камера Hikvision", color = Fg, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                    Field("IP-адрес", hikHost, { hikHost = it })
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(Modifier.weight(1f)) { Field("HTTP-порт", hikHttp, { hikHttp = it }, KeyboardType.Number) }
+                        Box(Modifier.weight(1f)) { Field("RTSP-порт", hikRtsp, { hikRtsp = it }, KeyboardType.Number) }
+                        Box(Modifier.weight(1f)) { Field("Канал", hikChannel, { hikChannel = it }, KeyboardType.Number) }
+                    }
+                    Field("Логин камеры", hikUser, { hikUser = it })
+                    SecretField("Пароль камеры", hikPassword) { hikPassword = it }
+                    Toggle("HTTPS (обычно порт 443)", hikHttps) { hikHttps = it }
+                    Toggle("Живой поток RTSP вместо снимка", hikLive) { hikLive = it }
+                    Toggle("Субпоток (канал x02, обычно H.264)", hikSub) { hikSub = it }
+                } else {
+                    Text(
+                        if (backdrop == "truck") "Файл app/src/main/assets/video/truck.webm" else "Файл app/src/main/assets/video/nature.webm",
+                        color = Muted,
+                        fontSize = 14.sp,
+                    )
+                }
                 Text("Затемнение  ${kotlin.math.round(dim * 100).toInt()}%", color = Muted, fontSize = 14.sp)
                 Slider(
                     value = dim,
@@ -626,6 +717,7 @@ private fun SettingsScreen(initial: AppSettings, onClose: () -> Unit, onSave: (A
                             hikLive = hikLive,
                             hikSubstream = hikSub,
                             dim = dim,
+                            backdrop = backdrop,
                         ),
                     )
                 },
@@ -642,12 +734,41 @@ private fun SettingsScreen(initial: AppSettings, onClose: () -> Unit, onSave: (A
 }
 
 @Composable
+private fun BackdropChoice(label: String, selected: Boolean, onClick: () -> Unit) {
+    val colors = if (selected) {
+        ButtonDefaults.buttonColors(containerColor = Fg, contentColor = Ink)
+    } else {
+        ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = Fg)
+    }
+    Button(
+        onClick = onClick,
+        colors = colors,
+        modifier = Modifier.height(48.dp).border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(12.dp)),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Text(label, fontSize = 16.sp)
+    }
+}
+
+@Composable
+private fun SecretField(label: String, value: String, onChange: (String) -> Unit) {
+    var shown by remember { mutableStateOf(false) }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Field(label, value, onChange, secret = !shown, modifier = Modifier.weight(1f))
+        OutlinedButton(onClick = { shown = !shown }, modifier = Modifier.height(56.dp)) {
+            Text(if (shown) "Скрыть" else "Показать", color = Fg, fontSize = 15.sp)
+        }
+    }
+}
+
+@Composable
 private fun Field(
     label: String,
     value: String,
     onChange: (String) -> Unit,
     keyboard: KeyboardType = KeyboardType.Text,
     secret: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
     OutlinedTextField(
         value = value,
@@ -657,7 +778,7 @@ private fun Field(
         visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
         keyboardOptions = KeyboardOptions(keyboardType = keyboard),
         textStyle = TextStyle(color = Fg, fontSize = 18.sp),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         colors = OutlinedTextFieldDefaults.colors(
             focusedTextColor = Fg,
             unfocusedTextColor = Fg,
@@ -672,8 +793,17 @@ private fun Field(
 
 @Composable
 private fun Toggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+            .clickable { onChange(!checked) }
+            .padding(horizontal = 12.dp),
+    ) {
         Text(label, color = Fg, fontSize = 15.sp, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onChange)
+        Switch(checked = checked, onCheckedChange = null, modifier = Modifier.focusProperties { canFocus = false })
     }
 }

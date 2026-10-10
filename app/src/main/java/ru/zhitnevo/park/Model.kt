@@ -26,6 +26,7 @@ data class AppSettings(
     val hikLive: Boolean = false,
     val hikSubstream: Boolean = true,
     val dim: Float = 0.28f,
+    val backdrop: String = "camera",
 )
 
 data class ParkRaw(
@@ -296,6 +297,7 @@ object Prefs {
             hikLive = p.getBoolean("hikLive", false),
             hikSubstream = p.getBoolean("hikSubstream", true),
             dim = p.getFloat("dim", 0.28f),
+            backdrop = p.getString("backdrop", "camera") ?: "camera",
         )
     }
 
@@ -316,6 +318,7 @@ object Prefs {
             .putBoolean("hikLive", s.hikLive)
             .putBoolean("hikSubstream", s.hikSubstream)
             .putFloat("dim", s.dim)
+            .putString("backdrop", s.backdrop)
             .apply()
     }
 }
