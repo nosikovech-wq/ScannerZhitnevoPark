@@ -232,15 +232,49 @@ function Get-ServiceCounts([string]$from, [string]$to, [string]$token) {
     return @{ Shower = $shower; Laundry = $laundry }
 }
 
+function Parse-DornetDate([string]$raw) {
+    if (-not $raw) { return $null }
+    $text = $raw.Trim()
+    foreach ($fmt in @("dd-MM-yyyy HH:mm:ss", "dd-MM-yyyy", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd")) {
+        try {
+            return [datetime]::ParseExact($text, $fmt, [Globalization.CultureInfo]::InvariantCulture)
+        } catch {}
+    }
+    return $null
+}
+function Newest-Review($first, $second) {
+    $best = $null
+    $bestWhen = [datetime]::MinValue
+    foreach ($payload in @($first, $second)) {
+        if ($null -eq $payload -or $null -eq $payload.items) { continue }
+        $item = $payload.items
+        if ($item -is [System.Array]) {
+            if ($item.Length -eq 0) { continue }
+            $item = $item[0]
+        }
+        if (-not $item.date_created) { continue }
+        $when = Parse-DornetDate ([string]$item.date_created)
+        if ($when -and $when -gt $bestWhen) {
+            $bestWhen = $when
+            $best = $payload
+        }
+    }
+    if ($best) { return $best }
+    return $first
+}
 function Fetch-PartnerData([string]$token, [string]$today, [string]$tomorrow, [string]$monthStart, [string]$nextMonth) {
     $dayPark = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/order/list?limit=1&start=0&dateFrom=$today&dateTo=$tomorrow&pointType=p" $null $token
     $monthPark = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/order/list?limit=1&start=0&dateFrom=$monthStart&dateTo=$nextMonth&pointType=p" $null $token
     $daySvc = Get-ServiceCounts $today $tomorrow $token
     $monthSvc = Get-ServiceCounts $monthStart $nextMonth $token
     $reviews = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/review/count" $null $token
-    $reviewStart = 0
-    if ($reviews.count) { $reviewStart = [Math]::Max(0, ([int]$reviews.count - 1)) }
-    $latest = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/review/list?limit=1&start=$reviewStart" $null $token
+    $first = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/review/list?limit=1&start=0" $null $token
+    $tail = $null
+    if ($reviews.count -and [int]$reviews.count -gt 1) {
+        $reviewStart = [Math]::Max(0, ([int]$reviews.count - 1))
+        $tail = Invoke-Partner "GET" "https://back.dornet.ru/api/supplier/review/list?limit=1&start=$reviewStart" $null $token
+    }
+    $latest = Newest-Review $first $tail
     return [pscustomobject]@{ DayPark = $dayPark; MonthPark = $monthPark; DaySvc = $daySvc; MonthSvc = $monthSvc; Reviews = $reviews; Latest = $latest }
 }
 function Update-Partner {
