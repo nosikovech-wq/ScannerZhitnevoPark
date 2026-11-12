@@ -201,8 +201,7 @@
       font-size: 13px;
     }
     .export-bar input[type="date"] { width: 158px; height: 40px; }
-    .fleet-count { color: var(--muted); margin: 0 0 12px; }
-    .fleet-count b { color: var(--fg); font-size: 18px; }
+    #fleet .stats { margin-bottom: 16px; }
     table { width: 100%; border-collapse: collapse; }
     #fleet table { table-layout: fixed; }
     #fleet col.plate { width: 168px; }
@@ -1006,7 +1005,7 @@ async function loadFleet() {
       <input id="fleetSearch" placeholder="Номер тягача, прицеп, ФИО или телефон">
       ${editable ? `<button class="btn" id="addCrew" type="button">Добавить</button><button class="btn" id="saveFleet" type="button">Сохранить</button>` : ""}
     </div>
-    <p class="fleet-count" id="fleetCount"></p>
+    <div class="stats" id="fleetCount"></div>
     <table>
       <colgroup>
         <col class="plate"><col class="plate"><col class="name"><col class="phone">${editable ? `<col class="act">` : ""}
@@ -1023,13 +1022,14 @@ async function loadFleet() {
     });
     return names.size;
   };
-  const showCount = (shown) => {
-    const all = driverTotal(rows);
-    const visible = driverTotal(shown.map(item => item.row));
-    const box = document.getElementById("fleetCount");
-    box.innerHTML = shown.length === rows.length
-      ? `Водителей: <b>${all}</b>`
-      : `Водителей: <b>${all}</b> · в списке <b>${visible}</b>`;
+  const showCount = () => {
+    const drivers = driverTotal(rows);
+    const noTrailer = rows.filter(row => !String(row.trailer || "").trim()).length;
+    const noPhone = rows.filter(row => phoneLines(row.phone).length === 0).length;
+    document.getElementById("fleetCount").innerHTML = `
+      <div class="stat"><b>${drivers}</b><span>водителей</span></div>
+      <div class="stat"><b>${noTrailer}</b><span>без номера прицепа</span></div>
+      <div class="stat"><b>${noPhone}</b><span>без телефона</span></div>`;
   };
   const paint = () => {
     const query = document.getElementById("fleetSearch").value.trim().toLocaleLowerCase("ru");
@@ -1047,7 +1047,7 @@ async function loadFleet() {
         </tr>`
       : `<tr><td>${escapeHtml(row.tractor)}</td><td>${escapeHtml(row.trailer)}</td><td>${escapeHtml(row.driver)}</td><td class="phones">${phoneLines(row.phone).map(phone => `<div>${escapeHtml(phone)}</div>`).join("")}</td></tr>`
     ).join("") || `<tr><td colspan="${editable ? 5 : 4}">Ничего не найдено</td></tr>`;
-    showCount(shown);
+    showCount();
     if (!editable) return;
     document.querySelectorAll("#fleetBody input").forEach(input => {
       input.oninput = () => {
@@ -1060,12 +1060,7 @@ async function loadFleet() {
         } else {
           rows[input.dataset.i][input.dataset.f] = input.value;
         }
-        const query = document.getElementById("fleetSearch").value.trim().toLocaleLowerCase("ru");
-        const shown = rows.map((row, index) => ({ row, index })).filter(item => {
-          if (!query) return true;
-          return [item.row.tractor, item.row.trailer, item.row.driver, item.row.phone].join(" ").toLocaleLowerCase("ru").includes(query);
-        });
-        showCount(shown);
+        showCount();
       };
     });
     document.querySelectorAll("[data-drop]").forEach(btn => btn.onclick = () => {
