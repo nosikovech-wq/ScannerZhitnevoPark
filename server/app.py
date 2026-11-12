@@ -96,6 +96,14 @@ def init_db() -> None:
                 photo_path TEXT,
                 sheet_uploaded INTEGER NOT NULL DEFAULT 0
             );
+            CREATE TABLE IF NOT EXISTS login_log (
+                id INTEGER PRIMARY KEY,
+                ts INTEGER NOT NULL,
+                username TEXT NOT NULL,
+                success INTEGER NOT NULL,
+                ip TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS login_log_ts ON login_log (ts);
             """
         )
         cols = [info[1] for info in conn.execute("PRAGMA table_info(plates)")]
@@ -799,6 +807,27 @@ async def clear_database(request: Request, user: sqlite3.Row = Depends(admin_onl
     return {"ok": True, "cleared": removed}
 
 
+def client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()[:64]
+    real = request.headers.get("x-real-ip", "")
+    if real:
+        return real.strip()[:64]
+    if request.client and request.client.host:
+        return request.client.host[:64]
+    return ""
+
+
+def remember_login(conn: sqlite3.Connection, username: str, success: bool, ip: str) -> None:
+    now = now_ms()
+    conn.execute("DELETE FROM login_log WHERE ts < ?", (now - 14 * 24 * 60 * 60 * 1000,))
+    conn.execute(
+        "INSERT INTO login_log (ts, username, success, ip) VALUES (?, ?, ?, ?)",
+        (now, (username or "—")[:80], 1 if success else 0, ip or "—"),
+    )
+
+
 @app.get("/api/health")
 def health():
     return {"ok": True}
@@ -809,17 +838,46 @@ async def login(request: Request):
     body = await request.json()
     username = str(body.get("username", "")).strip()
     password = str(body.get("password", ""))
+    ip = client_ip(request)
     with db() as conn:
         user = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
         if user is None or not check_password(password, user["password_hash"]):
+            remember_login(conn, username, False, ip)
+            conn.commit()
             raise HTTPException(401, "Неверный логин или пароль")
         token = secrets.token_urlsafe(32)
         conn.execute(
             "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
             (token, user["id"], int(time.time()) + TOKEN_TTL),
         )
+        remember_login(conn, user["username"], True, ip)
         conn.commit()
     return {"token": token, "username": user["username"], "role": user["role"]}
+
+
+@app.get("/api/logs")
+def login_logs(user: sqlite3.Row = Depends(admin_only)):
+    since = now_ms() - 14 * 24 * 60 * 60 * 1000
+    with db() as conn:
+        conn.execute("DELETE FROM login_log WHERE ts < ?", (since,))
+        conn.commit()
+        rows = conn.execute(
+            "SELECT ts, username, success, ip FROM login_log WHERE ts >= ? ORDER BY ts DESC LIMIT 500",
+            (since,),
+        ).fetchall()
+        totals = conn.execute(
+            "SELECT COUNT(*), COALESCE(SUM(success), 0) FROM login_log WHERE ts >= ?",
+            (since,),
+        ).fetchone()
+    total = int(totals[0] or 0)
+    ok = int(totals[1] or 0)
+    return {
+        "days": 14,
+        "total": total,
+        "success": ok,
+        "failed": total - ok,
+        "items": [dict(row) for row in rows],
+    }
 
 
 @app.get("/api/me")
