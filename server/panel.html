@@ -143,7 +143,7 @@
     body[data-role="manager"] [data-edit],
     body[data-role="manager"] #author { display: none !important; }
     body[data-role="manager"] #journal .tools {
-      grid-template-columns: 168px auto auto auto auto auto;
+      grid-template-columns: 168px auto auto auto auto;
     }
     .tools {
       display: flex;
@@ -159,7 +159,7 @@
     .tools select { width: auto; flex: none; min-width: 160px; padding: 0 12px; }
     #journal .tools {
       display: grid;
-      grid-template-columns: 168px auto auto auto minmax(180px, 1fr) auto auto;
+      grid-template-columns: 168px auto auto auto minmax(180px, 1fr) auto;
       align-items: center;
     }
     #journal .tools #search {
@@ -177,6 +177,32 @@
       #journal .tools #search { grid-column: 1 / -1; }
     }
     #author { min-width: 200px; }
+    .export-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: -2px 0 16px;
+      padding: 10px 12px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+    }
+    .export-bar .name {
+      color: var(--fg);
+      font-weight: 650;
+      margin-right: 4px;
+    }
+    .export-bar label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .export-bar input[type="date"] { width: 158px; height: 40px; }
+    .fleet-count { color: var(--muted); margin: 0 0 12px; }
+    .fleet-count b { color: var(--fg); font-size: 18px; }
     table { width: 100%; border-collapse: collapse; }
     #fleet table { table-layout: fixed; }
     #fleet col.plate { width: 168px; }
@@ -255,7 +281,14 @@
           <option value="100">100</option>
           <option value="200">200</option>
         </select>
-        <button class="btn" id="excel" type="button">Excel</button>
+      </div>
+      <div class="export-bar">
+        <span class="name">Выгрузка Excel</span>
+        <label>С <input id="exportFrom" class="date" type="date"></label>
+        <label>По <input id="exportTo" class="date" type="date"></label>
+        <button class="btn ghost" id="exportMonth" type="button">Этот месяц</button>
+        <button class="btn ghost" id="exportPrev" type="button">Прошлый месяц</button>
+        <button class="btn" id="excel" type="button">Скачать</button>
       </div>
       <div id="list"></div>
       <div class="error" id="journalMessage"></div>
@@ -468,17 +501,47 @@ document.getElementById("pageSize").onchange = () => {
   localStorage.setItem("park_limit", document.getElementById("pageSize").value);
   loadJournal();
 };
+function isoDate(date) {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return date.getFullYear() + "-" + month + "-" + day;
+}
+function setExportRange(from, to) {
+  document.getElementById("exportFrom").value = isoDate(from);
+  document.getElementById("exportTo").value = isoDate(to);
+}
+function setCurrentExportMonth() {
+  const now = new Date();
+  setExportRange(new Date(now.getFullYear(), now.getMonth(), 1), now);
+}
+function setPreviousExportMonth() {
+  const now = new Date();
+  const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const last = new Date(now.getFullYear(), now.getMonth(), 0);
+  setExportRange(first, last);
+}
+setCurrentExportMonth();
+document.getElementById("exportMonth").onclick = setCurrentExportMonth;
+document.getElementById("exportPrev").onclick = setPreviousExportMonth;
 document.getElementById("excel").onclick = async () => {
   const button = document.getElementById("excel");
+  const from = document.getElementById("exportFrom").value;
+  const to = document.getElementById("exportTo").value;
+  if (!from || !to || from > to) {
+    alert("Укажите период выгрузки");
+    return;
+  }
   button.disabled = true;
   try {
-    const response = await fetch("/api/export.xls", { headers: { Authorization: "Bearer " + token } });
+    const response = await fetch("/api/export.xls?from=" + encodeURIComponent(from) + "&to=" + encodeURIComponent(to), {
+      headers: { Authorization: "Bearer " + token }
+    });
     if (response.status === 401) { logout(); return; }
     if (!response.ok) throw new Error("Не удалось выгрузить таблицу");
     const blob = await response.blob();
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = "TransportnyyeTekhnologii.xls";
+    link.download = "TransportnyyeTekhnologii_" + from + "_" + to + ".xls";
     link.click();
     URL.revokeObjectURL(link.href);
   } catch (error) {
@@ -943,6 +1006,7 @@ async function loadFleet() {
       <input id="fleetSearch" placeholder="Номер тягача, прицеп, ФИО или телефон">
       ${editable ? `<button class="btn" id="addCrew" type="button">Добавить</button><button class="btn" id="saveFleet" type="button">Сохранить</button>` : ""}
     </div>
+    <p class="fleet-count" id="fleetCount"></p>
     <table>
       <colgroup>
         <col class="plate"><col class="plate"><col class="name"><col class="phone">${editable ? `<col class="act">` : ""}
@@ -951,6 +1015,22 @@ async function loadFleet() {
       <tbody id="fleetBody"></tbody>
     </table>
     <div class="error" id="fleetError"></div>`;
+  const driverTotal = (list) => {
+    const names = new Set();
+    list.forEach(row => {
+      const name = String(row.driver || "").trim().toLocaleLowerCase("ru");
+      if (name) names.add(name);
+    });
+    return names.size;
+  };
+  const showCount = (shown) => {
+    const all = driverTotal(rows);
+    const visible = driverTotal(shown.map(item => item.row));
+    const box = document.getElementById("fleetCount");
+    box.innerHTML = shown.length === rows.length
+      ? `Водителей: <b>${all}</b>`
+      : `Водителей: <b>${all}</b> · в списке <b>${visible}</b>`;
+  };
   const paint = () => {
     const query = document.getElementById("fleetSearch").value.trim().toLocaleLowerCase("ru");
     const shown = rows.map((row, index) => ({ row, index })).filter(item => {
@@ -967,6 +1047,7 @@ async function loadFleet() {
         </tr>`
       : `<tr><td>${escapeHtml(row.tractor)}</td><td>${escapeHtml(row.trailer)}</td><td>${escapeHtml(row.driver)}</td><td class="phones">${phoneLines(row.phone).map(phone => `<div>${escapeHtml(phone)}</div>`).join("")}</td></tr>`
     ).join("") || `<tr><td colspan="${editable ? 5 : 4}">Ничего не найдено</td></tr>`;
+    showCount(shown);
     if (!editable) return;
     document.querySelectorAll("#fleetBody input").forEach(input => {
       input.oninput = () => {
@@ -979,6 +1060,12 @@ async function loadFleet() {
         } else {
           rows[input.dataset.i][input.dataset.f] = input.value;
         }
+        const query = document.getElementById("fleetSearch").value.trim().toLocaleLowerCase("ru");
+        const shown = rows.map((row, index) => ({ row, index })).filter(item => {
+          if (!query) return true;
+          return [item.row.tractor, item.row.trailer, item.row.driver, item.row.phone].join(" ").toLocaleLowerCase("ru").includes(query);
+        });
+        showCount(shown);
       };
     });
     document.querySelectorAll("[data-drop]").forEach(btn => btn.onclick = () => {

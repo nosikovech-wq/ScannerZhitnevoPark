@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 
 DATA = Path(os.environ.get("DATA_DIR", "/var/lib/zhitnevo"))
@@ -584,7 +584,9 @@ def excel_serial(year: int, month: int, day: int) -> int:
     return (moment - EXCEL_EPOCH).days
 
 
-def workbook_xml() -> str:
+def workbook_xml(start: datetime, end: datetime) -> str:
+    start_ms = int(start.timestamp() * 1000)
+    end_ms = int(end.timestamp() * 1000)
     by_plate, tractors = fleet_directory()
     with db() as conn:
         plates = conn.execute(
@@ -607,14 +609,7 @@ def workbook_xml() -> str:
         )
         return stored if blocked else resolved
 
-    grouped: dict[tuple[int, int], list] = {}
-    for row in plates:
-        moment = datetime.fromtimestamp(row["ts"] / 1000, MSK)
-        grouped.setdefault((moment.year, moment.month), []).append(row)
-    if not grouped:
-        now = datetime.now(MSK)
-        grouped[(now.year, now.month)] = []
-
+    chosen = [row for row in plates if start_ms <= row["ts"] < end_ms]
     parts = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<?mso-application progid="Excel.Sheet"?>',
@@ -627,14 +622,29 @@ def workbook_xml() -> str:
         '<Style ss:ID="Info"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="12"/></Style>',
         "</Styles>",
     ]
-    for year, month in sorted(grouped):
-        parts.append(month_sheet(year, month, grouped[(year, month)], by_plate, export_key))
+    cursor = start.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    last = end - timedelta(seconds=1)
+    while cursor <= last:
+        year, month = cursor.year, cursor.month
+        month_start = datetime(year, month, 1, tzinfo=MSK)
+        month_end = datetime(year + 1, 1, 1, tzinfo=MSK) if month == 12 else datetime(year, month + 1, 1, tzinfo=MSK)
+        clip_start = start if start > month_start else month_start
+        clip_end = end if end < month_end else month_end
+        month_rows = []
+        for row in chosen:
+            moment = datetime.fromtimestamp(row["ts"] / 1000, MSK)
+            if moment.year == year and moment.month == month:
+                month_rows.append(row)
+        parts.append(month_sheet(year, month, month_rows, by_plate, export_key, clip_start.day, (clip_end - timedelta(seconds=1)).day))
+        cursor = month_end
     parts.append("</Workbook>")
     return "".join(parts)
 
 
-def month_sheet(year: int, month: int, plates: list, by_plate: dict, export_key) -> str:
+def month_sheet(year: int, month: int, plates: list, by_plate: dict, export_key, first_day: int, last_day: int) -> str:
     days = monthrange(year, month)[1]
+    first_day = max(1, min(first_day, days))
+    last_day = max(first_day, min(last_day, days))
     buckets: dict[str, list] = {}
     for row in plates:
         buckets.setdefault(export_key(row), []).append(row)
@@ -645,12 +655,12 @@ def month_sheet(year: int, month: int, plates: list, by_plate: dict, export_key)
         '<Column ss:AutoFitWidth="0" ss:Width="140"/>',
         '<Column ss:AutoFitWidth="0" ss:Width="220"/>',
     ]
-    cells.extend('<Column ss:AutoFitWidth="0" ss:Width="62"/>' for _ in range(days))
+    cells.extend('<Column ss:AutoFitWidth="0" ss:Width="62"/>' for _ in range(first_day, last_day + 1))
     cells.append("<Row>")
     cells.append('<Cell ss:StyleID="Title"><Data ss:Type="String">Номер тягача</Data></Cell>')
     cells.append('<Cell ss:StyleID="Title"><Data ss:Type="String">Номер прицепа</Data></Cell>')
     cells.append('<Cell ss:StyleID="Title"><Data ss:Type="String">ФИО</Data></Cell>')
-    for day in range(1, days + 1):
+    for day in range(first_day, last_day + 1):
         cells.append(f'<Cell ss:StyleID="Date"><Data ss:Type="Number">{excel_serial(year, month, day)}</Data></Cell>')
     cells.append("</Row>")
     for key in order:
@@ -667,7 +677,7 @@ def month_sheet(year: int, month: int, plates: list, by_plate: dict, export_key)
         cells.append(f'<Cell ss:StyleID="Plate"><Data ss:Type="String">{xml_text(tractor)}</Data></Cell>')
         cells.append(excel_text(trailer))
         cells.append(excel_text(driver))
-        for day in range(1, days + 1):
+        for day in range(first_day, last_day + 1):
             times = sorted(by_day.get(day, []), key=lambda item: item["ts"])
             if not times:
                 cells.append("<Cell/>")
@@ -694,13 +704,38 @@ def excel_text(value: str) -> str:
     return f'<Cell ss:StyleID="Info"><Data ss:Type="String">{xml_text(value)}</Data></Cell>'
 
 
+def export_bounds(date_from: str, date_to: str) -> tuple[datetime, datetime]:
+    now = datetime.now(MSK)
+    if not date_from.strip() and not date_to.strip():
+        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        end = datetime(now.year + 1, 1, 1, tzinfo=MSK) if now.month == 12 else datetime(now.year, now.month + 1, 1, tzinfo=MSK)
+        return start, end
+    try:
+        start = datetime.strptime(date_from.strip(), "%Y-%m-%d").replace(tzinfo=MSK)
+        finish = datetime.strptime(date_to.strip(), "%Y-%m-%d").replace(tzinfo=MSK)
+    except ValueError:
+        raise HTTPException(400, "Неверный период")
+    end = finish + timedelta(days=1)
+    if end <= start:
+        raise HTTPException(400, "Дата «по» раньше даты «с»")
+    if (end - start).days > 366 * 2:
+        raise HTTPException(400, "Период длиннее двух лет")
+    return start, end
+
+
 @app.get("/api/export.xls")
-def export_excel(user: sqlite3.Row = Depends(office)):
-    payload = workbook_xml().encode("utf-8")
+def export_excel(
+    date_from: str = Query("", alias="from"),
+    date_to: str = Query("", alias="to"),
+    user: sqlite3.Row = Depends(office),
+):
+    start, end = export_bounds(date_from, date_to)
+    payload = workbook_xml(start, end).encode("utf-8")
+    filename = f"TransportnyyeTekhnologii_{start:%Y-%m-%d}_{(end - timedelta(days=1)):%Y-%m-%d}.xls"
     return Response(
         content=payload,
         media_type="application/vnd.ms-excel",
-        headers={"Content-Disposition": 'attachment; filename="TransportnyyeTekhnologii.xls"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
