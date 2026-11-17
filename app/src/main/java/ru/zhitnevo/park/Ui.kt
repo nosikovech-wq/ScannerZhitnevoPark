@@ -66,7 +66,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
@@ -634,24 +634,12 @@ private fun SettingsScreen(initial: AppSettings, onClose: () -> Unit, onSave: (A
     var hikSub by remember { mutableStateOf(initial.hikSubstream) }
     var dim by remember { mutableStateOf(initial.dim) }
     var backdrop by remember { mutableStateOf(initial.backdrop) }
-    val edit = remember { TvEdit() }
-    val keyboard = LocalSoftwareKeyboardController.current
-    val view = LocalView.current
     val firstFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
         delay(200)
         runCatching { firstFocus.requestFocus() }
-        hideIme(view)
     }
-    BackHandler {
-        if (edit.key != null) {
-            edit.key = null
-            keyboard?.hide()
-            hideIme(view)
-        } else {
-            onClose()
-        }
-    }
+    BackHandler { onClose() }
 
     Column(
         Modifier
@@ -664,13 +652,13 @@ private fun SettingsScreen(initial: AppSettings, onClose: () -> Unit, onSave: (A
         Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Панель", color = Fg, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                Field("Адрес панели", server, { server = it }, edit = edit, modifier = Modifier.focusRequester(firstFocus))
-                Field("Логин панели", username, { username = it }, edit = edit)
-                SecretField("Пароль панели", password, edit) { password = it }
+                TvValue("Адрес панели", server, modifier = Modifier.focusRequester(firstFocus)) { server = it }
+                TvValue("Логин панели", username) { username = it }
+                TvValue("Пароль панели", password, secret = true) { password = it }
                 Spacer(Modifier.height(8.dp))
                 Text("Дорожная сеть", color = Partner, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                Field("Логин", partnerUser, { partnerUser = it }, edit = edit)
-                SecretField("Пароль", partnerPassword, edit) { partnerPassword = it }
+                TvValue("Логин", partnerUser) { partnerUser = it }
+                TvValue("Пароль", partnerPassword, secret = true) { partnerPassword = it }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Фон", color = Fg, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
@@ -681,14 +669,14 @@ private fun SettingsScreen(initial: AppSettings, onClose: () -> Unit, onSave: (A
                 }
                 if (backdrop == "camera") {
                     Text("Камера Hikvision", color = Fg, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                    Field("IP-адрес", hikHost, { hikHost = it }, edit = edit)
+                    TvValue("IP-адрес", hikHost) { hikHost = it }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Box(Modifier.weight(1f)) { Field("HTTP-порт", hikHttp, { hikHttp = it }, KeyboardType.Number, edit = edit) }
-                        Box(Modifier.weight(1f)) { Field("RTSP-порт", hikRtsp, { hikRtsp = it }, KeyboardType.Number, edit = edit) }
-                        Box(Modifier.weight(1f)) { Field("Канал", hikChannel, { hikChannel = it }, KeyboardType.Number, edit = edit) }
+                        Box(Modifier.weight(1f)) { TvValue("HTTP-порт", hikHttp, keyboard = KeyboardType.Number) { hikHttp = it } }
+                        Box(Modifier.weight(1f)) { TvValue("RTSP-порт", hikRtsp, keyboard = KeyboardType.Number) { hikRtsp = it } }
+                        Box(Modifier.weight(1f)) { TvValue("Канал", hikChannel, keyboard = KeyboardType.Number) { hikChannel = it } }
                     }
-                    Field("Логин камеры", hikUser, { hikUser = it }, edit = edit)
-                    SecretField("Пароль камеры", hikPassword, edit) { hikPassword = it }
+                    TvValue("Логин камеры", hikUser) { hikUser = it }
+                    TvValue("Пароль камеры", hikPassword, secret = true) { hikPassword = it }
                     Toggle("HTTPS (обычно порт 443)", hikHttps) { hikHttps = it }
                     Toggle("Живой поток RTSP вместо снимка", hikLive) { hikLive = it }
                     Toggle("Субпоток (канал x02, обычно H.264)", hikSub) { hikSub = it }
@@ -761,97 +749,155 @@ private fun BackdropChoice(label: String, selected: Boolean, onClick: () -> Unit
 }
 
 @Composable
-private fun SecretField(label: String, value: String, edit: TvEdit, onChange: (String) -> Unit) {
-    var shown by remember { mutableStateOf(false) }
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Field(label, value, onChange, secret = !shown, edit = edit, modifier = Modifier.weight(1f))
-        OutlinedButton(onClick = { shown = !shown }, modifier = Modifier.height(56.dp)) {
-            Text(if (shown) "Скрыть" else "Показать", color = Fg, fontSize = 15.sp)
+private fun TvValue(
+    label: String,
+    value: String,
+    secret: Boolean = false,
+    keyboard: KeyboardType = KeyboardType.Text,
+    modifier: Modifier = Modifier,
+    onChange: (String) -> Unit,
+) {
+    var editing by remember { mutableStateOf(false) }
+    var restore by remember { mutableStateOf(false) }
+    val rowFocus = remember { FocusRequester() }
+    val shown = when {
+        value.isBlank() -> "не задан"
+        secret -> "•".repeat(value.length.coerceAtMost(16))
+        else -> value
+    }
+    Row(
+        modifier
+            .fillMaxWidth()
+            .height(58.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+            .focusRequester(rowFocus)
+            .clickable { editing = true }
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(label, color = Muted, fontSize = 12.sp, maxLines = 1)
+            Text(shown, color = Fg, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+        Text("ОК", color = Muted, fontSize = 13.sp)
+    }
+    if (editing) {
+        TvEditor(
+            label = label,
+            value = value,
+            secret = secret,
+            keyboard = keyboard,
+            onDismiss = {
+                editing = false
+                restore = true
+            },
+            onSave = {
+                onChange(it)
+                editing = false
+                restore = true
+            },
+        )
+    }
+    LaunchedEffect(restore) {
+        if (!restore) return@LaunchedEffect
+        delay(80)
+        runCatching { rowFocus.requestFocus() }
+        restore = false
     }
 }
 
-private class TvEdit {
-    var key by mutableStateOf<String?>(null)
+@Composable
+private fun TvEditor(
+    label: String,
+    value: String,
+    secret: Boolean,
+    keyboard: KeyboardType,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var text by remember { mutableStateOf(value) }
+    var shown by remember { mutableStateOf(!secret) }
+    val fieldFocus = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val view = LocalView.current
+    Dialog(onDismissRequest = {
+        keyboardController?.hide()
+        hideIme(view)
+        onDismiss()
+    }) {
+        BackHandler {
+            keyboardController?.hide()
+            hideIme(view)
+            onDismiss()
+        }
+        Column(
+            Modifier
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color(0xFF15171B))
+                .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                .padding(20.dp)
+                .width(520.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(label, color = Fg, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                singleLine = true,
+                visualTransformation = if (shown) VisualTransformation.None else PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = keyboard, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = {
+                    keyboardController?.hide()
+                    hideIme(view)
+                    onSave(text)
+                }),
+                textStyle = TextStyle(color = Fg, fontSize = 18.sp),
+                modifier = Modifier.fillMaxWidth().focusRequester(fieldFocus),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Fg,
+                    unfocusedTextColor = Fg,
+                    focusedBorderColor = Partner,
+                    unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                    cursorColor = Fg,
+                ),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = {
+                        keyboardController?.hide()
+                        hideIme(view)
+                        onSave(text)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Fg, contentColor = Ink),
+                    modifier = Modifier.height(48.dp),
+                ) { Text("Готово") }
+                OutlinedButton(
+                    onClick = {
+                        keyboardController?.hide()
+                        hideIme(view)
+                        onDismiss()
+                    },
+                    modifier = Modifier.height(48.dp),
+                ) { Text("Отмена", color = Fg) }
+                if (secret) {
+                    OutlinedButton(onClick = { shown = !shown }, modifier = Modifier.height(48.dp)) {
+                        Text(if (shown) "Скрыть" else "Показать", color = Fg)
+                    }
+                }
+            }
+        }
+    }
+    LaunchedEffect(Unit) {
+        delay(150)
+        runCatching { fieldFocus.requestFocus() }
+        keyboardController?.show()
+    }
 }
 
 private fun hideIme(view: android.view.View) {
     val imm = view.context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as InputMethodManager
     imm.hideSoftInputFromWindow(view.windowToken, 0)
-}
-
-@Composable
-private fun Field(
-    label: String,
-    value: String,
-    onChange: (String) -> Unit,
-    keyboard: KeyboardType = KeyboardType.Text,
-    secret: Boolean = false,
-    edit: TvEdit,
-    modifier: Modifier = Modifier,
-) {
-    val id = remember { java.util.UUID.randomUUID().toString() }
-    val active = edit.key == id
-    val keyboardController = LocalSoftwareKeyboardController.current
-    val view = LocalView.current
-    var focused by remember { mutableStateOf(false) }
-    LaunchedEffect(focused, active) {
-        if (focused && !active) {
-            keyboardController?.hide()
-            hideIme(view)
-        }
-    }
-    OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
-        singleLine = true,
-        readOnly = !active,
-        label = { Text(label) },
-        suffix = if (focused && !active) {
-            { Text("ОК", color = Muted, fontSize = 13.sp) }
-        } else {
-            null
-        },
-        visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
-        keyboardOptions = KeyboardOptions(keyboardType = keyboard, imeAction = ImeAction.Done),
-        keyboardActions = KeyboardActions(onDone = {
-            edit.key = null
-            keyboardController?.hide()
-            hideIme(view)
-        }),
-        textStyle = TextStyle(color = Fg, fontSize = 18.sp),
-        modifier = modifier
-            .fillMaxWidth()
-            .onFocusChanged { state ->
-                focused = state.isFocused
-                if (!state.isFocused && edit.key == id) {
-                    edit.key = null
-                    keyboardController?.hide()
-                    hideIme(view)
-                }
-            }
-            .onPreviewKeyEvent { event ->
-                val ok = event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter
-                if (!ok || active) return@onPreviewKeyEvent false
-                if (event.type == KeyEventType.KeyUp) {
-                    edit.key = id
-                    keyboardController?.show()
-                }
-                true
-            },
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedTextColor = Fg,
-            unfocusedTextColor = Fg,
-            focusedBorderColor = Partner,
-            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-            focusedLabelColor = Muted,
-            unfocusedLabelColor = Muted,
-            cursorColor = Fg,
-            disabledTextColor = Fg,
-            disabledBorderColor = Color.White.copy(alpha = 0.2f),
-            disabledLabelColor = Muted,
-        ),
-    )
 }
 
 @Composable
