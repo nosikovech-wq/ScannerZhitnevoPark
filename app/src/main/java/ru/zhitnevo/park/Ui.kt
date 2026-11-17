@@ -1,6 +1,7 @@
 package ru.zhitnevo.park
 
 import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -28,6 +29,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -64,10 +66,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -134,14 +140,6 @@ fun ParkApp(vm: FeedViewModel = viewModel()) {
                             open = true
                             true
                         }
-                        Key.Back, Key.Escape -> {
-                            if (open) {
-                                open = false
-                                true
-                            } else {
-                                false
-                            }
-                        }
                         else -> false
                     }
                 },
@@ -160,7 +158,6 @@ fun ParkApp(vm: FeedViewModel = viewModel()) {
                 onOpenSettings = { open = true },
             )
             if (open) {
-                BackHandler { open = false }
                 SettingsScreen(
                     initial = settings,
                     onClose = { open = false },
@@ -637,10 +634,23 @@ private fun SettingsScreen(initial: AppSettings, onClose: () -> Unit, onSave: (A
     var hikSub by remember { mutableStateOf(initial.hikSubstream) }
     var dim by remember { mutableStateOf(initial.dim) }
     var backdrop by remember { mutableStateOf(initial.backdrop) }
+    val edit = remember { TvEdit() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val view = LocalView.current
     val firstFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
         delay(200)
         runCatching { firstFocus.requestFocus() }
+        hideIme(view)
+    }
+    BackHandler {
+        if (edit.key != null) {
+            edit.key = null
+            keyboard?.hide()
+            hideIme(view)
+        } else {
+            onClose()
+        }
     }
 
     Column(
@@ -654,13 +664,13 @@ private fun SettingsScreen(initial: AppSettings, onClose: () -> Unit, onSave: (A
         Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Панель", color = Fg, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                Field("Адрес панели", server, { server = it }, modifier = Modifier.focusRequester(firstFocus))
-                Field("Логин панели", username, { username = it })
-                SecretField("Пароль панели", password) { password = it }
+                Field("Адрес панели", server, { server = it }, edit = edit, modifier = Modifier.focusRequester(firstFocus))
+                Field("Логин панели", username, { username = it }, edit = edit)
+                SecretField("Пароль панели", password, edit) { password = it }
                 Spacer(Modifier.height(8.dp))
                 Text("Дорожная сеть", color = Partner, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                Field("Логин", partnerUser, { partnerUser = it })
-                SecretField("Пароль", partnerPassword) { partnerPassword = it }
+                Field("Логин", partnerUser, { partnerUser = it }, edit = edit)
+                SecretField("Пароль", partnerPassword, edit) { partnerPassword = it }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Фон", color = Fg, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
@@ -671,14 +681,14 @@ private fun SettingsScreen(initial: AppSettings, onClose: () -> Unit, onSave: (A
                 }
                 if (backdrop == "camera") {
                     Text("Камера Hikvision", color = Fg, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                    Field("IP-адрес", hikHost, { hikHost = it })
+                    Field("IP-адрес", hikHost, { hikHost = it }, edit = edit)
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Box(Modifier.weight(1f)) { Field("HTTP-порт", hikHttp, { hikHttp = it }, KeyboardType.Number) }
-                        Box(Modifier.weight(1f)) { Field("RTSP-порт", hikRtsp, { hikRtsp = it }, KeyboardType.Number) }
-                        Box(Modifier.weight(1f)) { Field("Канал", hikChannel, { hikChannel = it }, KeyboardType.Number) }
+                        Box(Modifier.weight(1f)) { Field("HTTP-порт", hikHttp, { hikHttp = it }, KeyboardType.Number, edit = edit) }
+                        Box(Modifier.weight(1f)) { Field("RTSP-порт", hikRtsp, { hikRtsp = it }, KeyboardType.Number, edit = edit) }
+                        Box(Modifier.weight(1f)) { Field("Канал", hikChannel, { hikChannel = it }, KeyboardType.Number, edit = edit) }
                     }
-                    Field("Логин камеры", hikUser, { hikUser = it })
-                    SecretField("Пароль камеры", hikPassword) { hikPassword = it }
+                    Field("Логин камеры", hikUser, { hikUser = it }, edit = edit)
+                    SecretField("Пароль камеры", hikPassword, edit) { hikPassword = it }
                     Toggle("HTTPS (обычно порт 443)", hikHttps) { hikHttps = it }
                     Toggle("Живой поток RTSP вместо снимка", hikLive) { hikLive = it }
                     Toggle("Субпоток (канал x02, обычно H.264)", hikSub) { hikSub = it }
@@ -751,14 +761,23 @@ private fun BackdropChoice(label: String, selected: Boolean, onClick: () -> Unit
 }
 
 @Composable
-private fun SecretField(label: String, value: String, onChange: (String) -> Unit) {
+private fun SecretField(label: String, value: String, edit: TvEdit, onChange: (String) -> Unit) {
     var shown by remember { mutableStateOf(false) }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Field(label, value, onChange, secret = !shown, modifier = Modifier.weight(1f))
+        Field(label, value, onChange, secret = !shown, edit = edit, modifier = Modifier.weight(1f))
         OutlinedButton(onClick = { shown = !shown }, modifier = Modifier.height(56.dp)) {
             Text(if (shown) "Скрыть" else "Показать", color = Fg, fontSize = 15.sp)
         }
     }
+}
+
+private class TvEdit {
+    var key by mutableStateOf<String?>(null)
+}
+
+private fun hideIme(view: android.view.View) {
+    val imm = view.context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as InputMethodManager
+    imm.hideSoftInputFromWindow(view.windowToken, 0)
 }
 
 @Composable
@@ -768,17 +787,58 @@ private fun Field(
     onChange: (String) -> Unit,
     keyboard: KeyboardType = KeyboardType.Text,
     secret: Boolean = false,
+    edit: TvEdit,
     modifier: Modifier = Modifier,
 ) {
+    val id = remember { java.util.UUID.randomUUID().toString() }
+    val active = edit.key == id
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val view = LocalView.current
+    var focused by remember { mutableStateOf(false) }
+    LaunchedEffect(focused, active) {
+        if (focused && !active) {
+            keyboardController?.hide()
+            hideIme(view)
+        }
+    }
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
         singleLine = true,
+        readOnly = !active,
         label = { Text(label) },
+        suffix = if (focused && !active) {
+            { Text("ОК", color = Muted, fontSize = 13.sp) }
+        } else {
+            null
+        },
         visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
-        keyboardOptions = KeyboardOptions(keyboardType = keyboard),
+        keyboardOptions = KeyboardOptions(keyboardType = keyboard, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = {
+            edit.key = null
+            keyboardController?.hide()
+            hideIme(view)
+        }),
         textStyle = TextStyle(color = Fg, fontSize = 18.sp),
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .onFocusChanged { state ->
+                focused = state.isFocused
+                if (!state.isFocused && edit.key == id) {
+                    edit.key = null
+                    keyboardController?.hide()
+                    hideIme(view)
+                }
+            }
+            .onPreviewKeyEvent { event ->
+                val ok = event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter
+                if (!ok || active) return@onPreviewKeyEvent false
+                if (event.type == KeyEventType.KeyUp) {
+                    edit.key = id
+                    keyboardController?.show()
+                }
+                true
+            },
         colors = OutlinedTextFieldDefaults.colors(
             focusedTextColor = Fg,
             unfocusedTextColor = Fg,
@@ -787,6 +847,9 @@ private fun Field(
             focusedLabelColor = Muted,
             unfocusedLabelColor = Muted,
             cursorColor = Fg,
+            disabledTextColor = Fg,
+            disabledBorderColor = Color.White.copy(alpha = 0.2f),
+            disabledLabelColor = Muted,
         ),
     )
 }
