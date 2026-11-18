@@ -13,6 +13,9 @@ import kotlinx.coroutines.withContext
 import okhttp3.Request
 import org.json.JSONObject
 import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 data class AirUi(val known: Boolean = false, val danger: Boolean = false, val mentionedAt: Long = 0)
 
@@ -102,11 +105,11 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             if (s.hikHost.isBlank()) {
                 cameraBitmap.value = null
                 camStatus.value = "камера не задана"
-                delay(1000)
+                delay(1.seconds)
                 continue
             }
             if (s.hikLive) {
-                delay(1000)
+                delay(1.seconds)
                 continue
             }
             try {
@@ -121,7 +124,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: Exception) {
                 camStatus.value = e.message?.takeIf { it.startsWith("камера") } ?: "камера нет сигнала"
             }
-            delay(4000)
+            delay(4.seconds)
         }
     }
 
@@ -161,7 +164,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 if (sky.value.code < 0) sky.value = Sky(label = "Житнево")
                 false
             }
-            delay(if (ok) 20 * 60_000L else 60_000L)
+            delay(if (ok) 20.minutes else 1.minutes)
         }
     }
 
@@ -183,7 +186,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             } catch (_: Exception) {
                 // оставляем последний известный статус
             }
-            delay(60_000)
+            delay(1.minutes)
         }
     }
 
@@ -250,7 +253,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun waitUntil(ms: Long, stamp: Int) {
         val until = System.currentTimeMillis() + ms
         while (System.currentTimeMillis() < until && generation.value == stamp) {
-            delay(400)
+            delay(400.milliseconds)
         }
     }
 }

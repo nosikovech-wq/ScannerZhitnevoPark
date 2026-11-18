@@ -1,4 +1,8 @@
+@file:SuppressLint("UnsafeOptInUsageError")
+
 package ru.zhitnevo.park
+
+import android.annotation.SuppressLint
 
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
@@ -47,6 +51,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -93,6 +98,8 @@ import java.time.Instant
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 private val Ink = Color(ParkColors.INK)
 private val Fg = Color(ParkColors.FG)
@@ -126,7 +133,7 @@ fun ParkApp(vm: FeedViewModel = viewModel()) {
         LaunchedEffect(Unit) {
             while (true) {
                 now = ZonedDateTime.now(MOSCOW)
-                delay(1000)
+                delay(1.seconds)
             }
         }
         Box(
@@ -185,9 +192,8 @@ private fun CameraLayer(
             if (settings.hikHost.isNotBlank() && settings.hikLive) {
                 RtspBackdrop(Hik.rtspUrl(settings), report)
             } else {
-                val bmp = frame
-                if (bmp != null && camStatus != "камера не задана") {
-                    val image = remember(bmp) { bmp.asImageBitmap() }
+                if (frame != null && camStatus != "камера не задана") {
+                    val image = remember(frame) { frame.asImageBitmap() }
                     Image(
                         bitmap = image,
                         contentDescription = null,
@@ -289,7 +295,7 @@ private fun Dashboard(
     val clock = clockText(now)
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
-        delay(300)
+        delay(300.milliseconds)
         runCatching { focus.requestFocus() }
     }
     val demo = parkState == "demo" || partnerState == "demo"
@@ -335,8 +341,8 @@ private fun Dashboard(
         if (!park.ready && park.status.isNotBlank() && parkState != "demo") {
             Text(park.status, color = Muted, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp))
         }
-        Band(R.drawable.logo_tt, "Транспортные технологии", Modifier.padding(top = 8.dp).weight(1f)) {
-            MetricGrid(parkMetrics(park), columns = 4, partner = false, Modifier.fillMaxSize())
+        Band(R.drawable.logo_tt, Modifier.padding(top = 8.dp).weight(1f)) {
+            MetricGrid(parkMetrics(park), partner = false, Modifier.fillMaxSize())
         }
         if (!partner.ready && partner.status.isNotBlank() && partnerState != "demo") {
             Text(partner.status, color = Partner, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
@@ -351,19 +357,19 @@ private fun Dashboard(
                 )
             }
             Spacer(Modifier.width(12.dp))
-            MetricGrid(partnerMetrics(partner), columns = 4, partner = true, Modifier.weight(1f).fillMaxHeight())
+            MetricGrid(partnerMetrics(partner), partner = true, Modifier.weight(1f).fillMaxHeight())
         }
         BplaBar(bpla)
     }
 }
 
 @Composable
-private fun Band(logo: Int, caption: String, modifier: Modifier, content: @Composable () -> Unit) {
+private fun Band(logo: Int, modifier: Modifier, content: @Composable () -> Unit) {
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(84.dp)) {
             Image(
                 painter = painterResource(logo),
-                contentDescription = caption,
+                contentDescription = "Транспортные технологии",
                 modifier = Modifier.size(64.dp),
                 contentScale = ContentScale.Fit,
             )
@@ -374,14 +380,14 @@ private fun Band(logo: Int, caption: String, modifier: Modifier, content: @Compo
 }
 
 @Composable
-private fun MetricGrid(items: List<Metric>, columns: Int, partner: Boolean, modifier: Modifier) {
+private fun MetricGrid(items: List<Metric>, partner: Boolean, modifier: Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        items.chunked(columns).forEach { row ->
+        items.chunked(4).forEach { row ->
             Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { metric ->
                     MetricCard(metric, partner, Modifier.weight(1f).fillMaxHeight())
                 }
-                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
@@ -632,11 +638,11 @@ private fun SettingsScreen(initial: AppSettings, onClose: () -> Unit, onSave: (A
     var hikHttps by remember { mutableStateOf(initial.hikHttps) }
     var hikLive by remember { mutableStateOf(initial.hikLive) }
     var hikSub by remember { mutableStateOf(initial.hikSubstream) }
-    var dim by remember { mutableStateOf(initial.dim) }
+    var dim by remember { mutableFloatStateOf(initial.dim) }
     var backdrop by remember { mutableStateOf(initial.backdrop) }
     val firstFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
-        delay(200)
+        delay(200.milliseconds)
         runCatching { firstFocus.requestFocus() }
     }
     BackHandler { onClose() }
@@ -752,9 +758,9 @@ private fun BackdropChoice(label: String, selected: Boolean, onClick: () -> Unit
 private fun TvValue(
     label: String,
     value: String,
+    modifier: Modifier = Modifier,
     secret: Boolean = false,
     keyboard: KeyboardType = KeyboardType.Text,
-    modifier: Modifier = Modifier,
     onChange: (String) -> Unit,
 ) {
     var editing by remember { mutableStateOf(false) }
@@ -801,7 +807,7 @@ private fun TvValue(
     }
     LaunchedEffect(restore) {
         if (!restore) return@LaunchedEffect
-        delay(80)
+        delay(80.milliseconds)
         runCatching { rowFocus.requestFocus() }
         restore = false
     }
@@ -889,7 +895,7 @@ private fun TvEditor(
         }
     }
     LaunchedEffect(Unit) {
-        delay(150)
+        delay(150.milliseconds)
         runCatching { fieldFocus.requestFocus() }
         keyboardController?.show()
     }
